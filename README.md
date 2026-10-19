@@ -30,3 +30,16 @@ Each page shows its maze's seed, so any maze can be made again.
 Other options: `--rows`, `--cols`, `--zones`, `--bridges`, `--bridge-span`,
 `--show-zones` (tint zones on solution pages), `--graph-paper`. Run
 `python3 amaze.py --help` for details.
+
+## Checking the rules
+
+```
+python3 check_rules.py          # build 12 mazes of mixed sizes and check them
+python3 check_rules.py 0 50     # seeds 0 to 49
+```
+
+It rebuilds everything from the finished walls and bridges, independently of
+the generator, and fails if any rule is broken: no dead ends besides start and
+finish, every cell reachable, at most one passage at a time under a bridge,
+and zones joined only at their single crossings. Run it after changing
+`amaze.py`.
