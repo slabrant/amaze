@@ -1,0 +1,11 @@
+[package]
+name = "amaze"
+version = "0.2.0"
+edition = "2021"
+description = "Printable mazes with bridges that weave over and under"
+
+[dependencies]
+miniz_oxide = "0.8"
+
+[profile.release]
+opt-level = 3
