@@ -1,18 +1,19 @@
 use std::collections::{HashMap, HashSet};
 use std::f64::consts::PI;
 
-use crate::maze::{walk_length, Maze, Orient, DC, DR};
+use crate::maze::{walk_length, Maze, Orient, DC, DR, EAST, SOUTH};
 use crate::pdf::{helvetica_width_in_points, Canvas, LineCap, PAGE_H, PAGE_W};
 
-const PATH_SHARE_OF_CELL: f64 = 0.75;
-const SOLID_GROUND_HATCHING: [f64; 3] = [0.7, 0.7, 0.7];
-const HIDDEN_EDGE_DASHES: [f64; 3] = [0.6, 0.6, 0.6];
-const BLACK: [f64; 3] = [0.0, 0.0, 0.0];
-const LABEL_GREY: [f64; 3] = [0.3, 0.3, 0.3];
-const CAPTION_GREY: [f64; 3] = [0.45, 0.45, 0.45];
-const GRAPH_PAPER_BLUE: [f64; 3] = [0.72, 0.82, 0.93];
-const WHITE: [f64; 3] = [1.0, 1.0, 1.0];
-const ZONE_TINTS: [[f64; 3]; 8] = [
+type Colour = [f64; 3];
+
+const BLACK: Colour = [0.0, 0.0, 0.0];
+const WHITE: Colour = [1.0, 1.0, 1.0];
+const LABEL_GREY: Colour = [0.3, 0.3, 0.3];
+const CAPTION_GREY: Colour = [0.45, 0.45, 0.45];
+const HIDDEN_EDGE_GREY: Colour = [0.6, 0.6, 0.6];
+const SOLID_GROUND_HATCHING: Colour = [0.7, 0.7, 0.7];
+const GRAPH_PAPER_BLUE: Colour = [0.72, 0.82, 0.93];
+const ZONE_TINTS: [Colour; 8] = [
     [0.98, 0.8, 0.8],
     [0.78, 0.87, 0.98],
     [0.8, 0.95, 0.8],
@@ -23,7 +24,44 @@ const ZONE_TINTS: [[f64; 3]; 8] = [
     [0.88, 0.88, 0.8],
 ];
 
-fn hsv_to_rgb(h: f64, s: f64, v: f64) -> [f64; 3] {
+const PATH_SHARE_OF_CELL: f64 = 0.75;
+const WALL_SHARE_OF_CELL: f64 = 0.06;
+const THINNEST_WALL: f64 = 0.6;
+const SOLUTION_LINE_SHARE_OF_CELL: f64 = 0.35;
+const SOLUTION_SHADES_PER_CELL_WALKED: usize = 4;
+const HIDDEN_EDGE_SHARE_OF_WALL: f64 = 0.7;
+const THINNEST_HIDDEN_EDGE: f64 = 0.5;
+const HIDDEN_EDGE_DASH_SHARE_OF_CELL: f64 = 0.08;
+const HIDDEN_EDGE_GAP_SHARE_OF_CELL: f64 = 0.07;
+const HATCH_LINE_SHARE_OF_CELL: f64 = 0.02;
+const THINNEST_HATCH_LINE: f64 = 0.25;
+const HATCH_SPACING_SHARE_OF_CELL: f64 = 0.14;
+const CLOSEST_HATCH_SPACING: f64 = 1.5;
+const GRAPH_PAPER_LINE: f64 = 0.3;
+
+const SYMBOL_SHARE_OF_CELL: f64 = 0.6;
+const BULLSEYE_OUTER_RING: f64 = 0.42;
+const BULLSEYE_MIDDLE_RING: f64 = 0.27;
+const BULLSEYE_CENTRE: f64 = 0.12;
+const ARROW_TIP_AHEAD: f64 = 0.4;
+const ARROW_TAIL_BEHIND: f64 = 0.32;
+const ARROW_HALF_WIDTH: f64 = 0.36;
+
+const HUE_FROM_RED_TO_VIOLET: f64 = 0.78;
+const SOLUTION_SATURATION: f64 = 0.9;
+const SOLUTION_BRIGHTNESS: f64 = 0.85;
+const DARKER_THROUGH_THE_YELLOWS_BY: f64 = 0.15;
+const YELLOWS_END_AT_FRACTION_OF_ROUTE: f64 = 0.4;
+
+const PAGE_MARGIN: f64 = 0.5 * 72.0;
+const GUTTER_BETWEEN_MAZES: f64 = 0.3 * 72.0;
+const CAPTION_LINES_OF_SPACE: f64 = 1.6;
+const CAPTION_BASELINE_DOWN_ITS_SPACE: f64 = 0.8;
+const CODE_AND_SIGNATURE_SHARE_OF_FONT: f64 = 0.85;
+const FONT_ONE_PER_PAGE: f64 = 9.0;
+const FONT_FOUR_PER_PAGE: f64 = 7.5;
+
+fn hsv_to_rgb(h: f64, s: f64, v: f64) -> Colour {
     let i = (h * 6.0).floor();
     let f = h * 6.0 - i;
     let (p, q, t) = (v * (1.0 - s), v * (1.0 - s * f), v * (1.0 - s * (1.0 - f)));
@@ -37,18 +75,86 @@ fn hsv_to_rgb(h: f64, s: f64, v: f64) -> [f64; 3] {
     }
 }
 
-pub fn red_to_violet_along_route(fraction_of_route: f64) -> [f64; 3] {
+pub fn red_to_violet_along_route(fraction_of_route: f64) -> Colour {
     let t = fraction_of_route;
-    hsv_to_rgb(0.78 * t, 0.9, 0.85 - 0.15 * (PI * t.min(0.4) / 0.4).sin())
+    let through_the_yellows = (PI * t.min(YELLOWS_END_AT_FRACTION_OF_ROUTE) / YELLOWS_END_AT_FRACTION_OF_ROUTE).sin();
+    let brightness = SOLUTION_BRIGHTNESS - DARKER_THROUGH_THE_YELLOWS_BY * through_the_yellows;
+    hsv_to_rgb(HUE_FROM_RED_TO_VIOLET * t, SOLUTION_SATURATION, brightness)
 }
 
-fn path_sides_within_cell(cell: f64) -> (f64, f64) {
-    let near = cell * (1.0 - PATH_SHARE_OF_CELL) / 2.0;
-    (near, cell - near)
+pub struct Placement {
+    pub left: f64,
+    pub top: f64,
+    pub cell_size: f64,
 }
 
-fn solution_line_width(cell: f64) -> f64 {
-    cell * 0.35
+struct Grid<'a> {
+    maze: &'a Maze,
+    left: f64,
+    top: f64,
+    cell_size: f64,
+    path_near_side: f64,
+    path_far_side: f64,
+    wall_width: f64,
+}
+
+impl<'a> Grid<'a> {
+    fn new(maze: &'a Maze, at: &Placement) -> Grid<'a> {
+        let s = at.cell_size;
+        let near = s * (1.0 - PATH_SHARE_OF_CELL) / 2.0;
+        Grid {
+            maze,
+            left: at.left,
+            top: at.top,
+            cell_size: s,
+            path_near_side: near,
+            path_far_side: s - near,
+            wall_width: (s * WALL_SHARE_OF_CELL).max(THINNEST_WALL),
+        }
+    }
+
+    fn corner(&self, cell: usize) -> (f64, f64) {
+        let (row, col) = (cell / self.maze.cols, cell % self.maze.cols);
+        (col as f64 * self.cell_size, row as f64 * self.cell_size)
+    }
+
+    fn centre(&self, cell: usize) -> (f64, f64) {
+        let (x, y) = self.corner(cell);
+        (self.left + x + self.cell_size / 2.0, self.top + y + self.cell_size / 2.0)
+    }
+
+    fn width(&self) -> f64 {
+        self.maze.cols as f64 * self.cell_size
+    }
+
+    fn height(&self) -> f64 {
+        self.maze.rows as f64 * self.cell_size
+    }
+
+    fn line(&self, cv: &mut Canvas, x1: f64, y1: f64, x2: f64, y2: f64) {
+        cv.line(self.left + x1, self.top + y1, self.left + x2, self.top + y2);
+    }
+
+    fn rect(&self, cv: &mut Canvas, x1: f64, y1: f64, x2: f64, y2: f64) {
+        cv.rect(self.left + x1.min(x2), self.top + y1.min(y2), (x2 - x1).abs(), (y2 - y1).abs());
+    }
+
+    fn path_square(&self, cv: &mut Canvas, cell: usize) {
+        let (x, y) = self.corner(cell);
+        let (near, far) = (self.path_near_side, self.path_far_side);
+        self.rect(cv, x + near, y + near, x + far, y + far);
+    }
+
+    fn whole_cell(&self, cv: &mut Canvas, cell: usize) {
+        let (x, y) = self.corner(cell);
+        self.rect(cv, x, y, x + self.cell_size, y + self.cell_size);
+    }
+
+    fn ink(&self, cv: &mut Canvas, colour: Colour, width: f64) {
+        cv.colour(colour);
+        cv.width(width);
+        cv.cap(LineCap::Square);
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -59,87 +165,66 @@ struct SolutionStep {
     ends_at: f64,
 }
 
-pub struct Placement {
-    pub left: f64,
-    pub top: f64,
-    pub cell: f64,
-}
-
 pub struct Look {
     pub graph_paper: bool,
     pub zone_tints: bool,
     pub back_of_sheet: bool,
 }
 
-pub fn draw_maze(cv: &mut Canvas, m: &Maze, at: &Placement, solution: Option<&[usize]>, look: &Look) {
-    let (x0, y0, s) = (at.left, at.top, at.cell);
-    let back_of_sheet = look.back_of_sheet;
-    let (rows, cols) = (m.rows as f64, m.cols as f64);
-    let (near, far) = path_sides_within_cell(s);
-    let wall_width = (s * 0.06).max(0.6);
-    let row_col = |c: usize| ((c / m.cols) as f64, (c % m.cols) as f64);
-    let centre = |c: usize| {
-        let (r, k) = row_col(c);
-        (x0 + (k + 0.5) * s, y0 + (r + 0.5) * s)
-    };
-    let line = |cv: &mut Canvas, x1: f64, y1: f64, x2: f64, y2: f64| cv.line(x0 + x1, y0 + y1, x0 + x2, y0 + y2);
-    let rect = |cv: &mut Canvas, x1: f64, y1: f64, x2: f64, y2: f64| {
-        cv.rect(x0 + x1.min(x2), y0 + y1.min(y2), (x2 - x1).abs(), (y2 - y1).abs())
-    };
-    let ink = |cv: &mut Canvas, colour: [f64; 3], width: f64| {
-        cv.colour(colour);
-        cv.width(width);
-        cv.cap(LineCap::Square);
-    };
-    let solid_under_single_bridge = |c: usize| m.solid_under_bridge[c] && !m.is_crossing(c);
-    let floor_colour =
-        |c: usize| if look.zone_tints { ZONE_TINTS[m.zone[c] as usize % ZONE_TINTS.len()] } else { WHITE };
+fn solution_steps(maze: &Maze, route: &[usize]) -> Vec<SolutionStep> {
+    let total = walk_length(route, maze.cols).max(1) as f64;
+    let mut walked = 0.0;
+    let mut steps = Vec::new();
+    for pair in route.windows(2) {
+        let length = walk_length(pair, maze.cols) as f64;
+        steps.push(SolutionStep { from: pair[0], to: pair[1], starts_at: walked / total, ends_at: (walked + length) / total });
+        walked += length;
+    }
+    steps
+}
 
-    if !back_of_sheet {
-        draw_ground(cv, m, at, look.graph_paper, &floor_colour);
+fn stroke_solution(cv: &mut Canvas, grid: &Grid, steps: &[SolutionStep]) {
+    cv.width(grid.cell_size * SOLUTION_LINE_SHARE_OF_CELL);
+    cv.cap(LineCap::Round);
+    for step in steps {
+        let ((px, py), (qx, qy)) = (grid.centre(step.from), grid.centre(step.to));
+        let shades = if step.from == step.to {
+            1
+        } else {
+            SOLUTION_SHADES_PER_CELL_WALKED * walk_length(&[step.from, step.to], grid.maze.cols)
+        };
+        for i in 0..shades {
+            let (f0, f1) = (i as f64 / shades as f64, (i + 1) as f64 / shades as f64);
+            let fraction = step.starts_at + (step.ends_at - step.starts_at) * (f0 + f1) / 2.0;
+            cv.colour(red_to_violet_along_route(fraction));
+            cv.line(px + (qx - px) * f0, py + (qy - py) * f0, px + (qx - px) * f1, py + (qy - py) * f1);
+            cv.stroke();
+        }
+    }
+}
+
+pub fn draw_maze(cv: &mut Canvas, maze: &Maze, at: &Placement, solution: Option<&[usize]>, look: &Look) {
+    let grid = Grid::new(maze, at);
+    let s = grid.cell_size;
+    let (near, far) = (grid.path_near_side, grid.path_far_side);
+    let floor_colour =
+        |cell: usize| if look.zone_tints { ZONE_TINTS[maze.zone[cell] as usize % ZONE_TINTS.len()] } else { WHITE };
+
+    if !look.back_of_sheet {
+        draw_ground(cv, &grid, look.graph_paper, &floor_colour);
     }
 
     let ordered = |a: usize, b: usize| (a.min(b), a.max(b));
-    let bridge_ends: HashSet<(usize, usize)> = m.bridges.iter().map(|b| (b.top_or_left, b.bottom_or_right)).collect();
-    let mut steps: Vec<SolutionStep> = Vec::new();
-    if let Some(route) = solution {
-        let total = walk_length(route, m.cols).max(1) as f64;
-        let mut walked = 0.0;
-        for pair in route.windows(2) {
-            let length = walk_length(pair, m.cols) as f64;
-            steps.push(SolutionStep {
-                from: pair[0],
-                to: pair[1],
-                starts_at: walked / total,
-                ends_at: (walked + length) / total,
-            });
-            walked += length;
-        }
-    }
-    let stroke_solution = |cv: &mut Canvas, steps: &[SolutionStep]| {
-        cv.width(solution_line_width(s));
-        cv.cap(LineCap::Round);
-        for step in steps {
-            let ((px, py), (qx, qy)) = (centre(step.from), centre(step.to));
-            let pieces = if step.from == step.to { 1 } else { 4 * walk_length(&[step.from, step.to], m.cols) };
-            for i in 0..pieces {
-                let (f0, f1) = (i as f64 / pieces as f64, (i + 1) as f64 / pieces as f64);
-                let fraction = step.starts_at + (step.ends_at - step.starts_at) * (f0 + f1) / 2.0;
-                cv.colour(red_to_violet_along_route(fraction));
-                cv.line(px + (qx - px) * f0, py + (qy - py) * f0, px + (qx - px) * f1, py + (qy - py) * f1);
-                cv.stroke();
-            }
-        }
-    };
-
+    let bridge_ends: HashSet<(usize, usize)> = maze.bridges.iter().map(|b| (b.top_or_left, b.bottom_or_right)).collect();
+    let steps = solution.map(|route| solution_steps(maze, route)).unwrap_or_default();
     if solution.is_some() {
         let mut steps_on_ground: Vec<SolutionStep> =
             steps.iter().copied().filter(|st| !bridge_ends.contains(&ordered(st.from, st.to))).collect();
-        steps_on_ground.push(SolutionStep { from: m.start, to: m.start, starts_at: 0.0, ends_at: 0.0 });
-        stroke_solution(cv, &steps_on_ground);
+        steps_on_ground.push(SolutionStep { from: maze.start, to: maze.start, starts_at: 0.0, ends_at: 0.0 });
+        stroke_solution(cv, &grid, &steps_on_ground);
     }
-    if !back_of_sheet {
-        draw_path_edges(cv, m, at);
+    if !look.back_of_sheet {
+        draw_path_edges(cv, &grid);
     }
 
     let steps_on_bridges: HashMap<(usize, usize), SolutionStep> = steps
@@ -149,104 +234,105 @@ pub fn draw_maze(cv: &mut Canvas, m: &Maze, at: &Placement, solution: Option<&[u
         .map(|st| (ordered(st.from, st.to), st))
         .collect();
     let draw_deck = |cv: &mut Canvas, i: usize| {
-        let b = &m.bridges[i];
-        let ((ra, ca), (rb, cb)) = (row_col(b.top_or_left), row_col(b.bottom_or_right));
-        cv.colour(if back_of_sheet { WHITE } else { floor_colour(b.top_or_left) });
+        let b = &maze.bridges[i];
+        let ((ax, ay), (bx, by)) = (grid.corner(b.top_or_left), grid.corner(b.bottom_or_right));
+        cv.colour(if look.back_of_sheet { WHITE } else { floor_colour(b.top_or_left) });
         let (x1, y1, x2, y2) = match b.orientation {
-            Orient::H => (ca * s + far, ra * s + near, cb * s + near, ra * s + far),
-            Orient::V => (ca * s + near, ra * s + far, ca * s + far, rb * s + near),
+            Orient::H => (ax + far, ay + near, bx + near, ay + far),
+            Orient::V => (ax + near, ay + far, ax + far, by + near),
         };
-        rect(cv, x1, y1, x2, y2);
+        grid.rect(cv, x1, y1, x2, y2);
         cv.fill();
-        if back_of_sheet {
+        if look.back_of_sheet {
             return;
         }
-        ink(cv, BLACK, wall_width);
+        grid.ink(cv, BLACK, grid.wall_width);
         match b.orientation {
             Orient::H => {
-                line(cv, x1, y1, x2, y1);
-                line(cv, x1, y2, x2, y2);
+                grid.line(cv, x1, y1, x2, y1);
+                grid.line(cv, x1, y2, x2, y2);
             }
             Orient::V => {
-                line(cv, x1, y1, x1, y2);
-                line(cv, x2, y1, x2, y2);
+                grid.line(cv, x1, y1, x1, y2);
+                grid.line(cv, x2, y1, x2, y2);
             }
         }
         cv.stroke();
     };
     let solution_along_bridge = |cv: &mut Canvas, i: usize| {
-        let b = &m.bridges[i];
+        let b = &maze.bridges[i];
         if let Some(&step) = steps_on_bridges.get(&(b.top_or_left, b.bottom_or_right)) {
-            stroke_solution(cv, &[step]);
+            stroke_solution(cv, &grid, &[step]);
         }
     };
-    let outline_what_runs_underneath = |cv: &mut Canvas, c: usize| {
-        let (r, k) = row_col(c);
-        let (x, y) = (k * s, r * s);
-        let underneath = if m.is_crossing(c) {
-            m.bridges[m.top_bridge_at_crossing[&c]].orientation.other()
+    let outline_what_runs_underneath = |cv: &mut Canvas, cell: usize| {
+        let (x, y) = grid.corner(cell);
+        let underneath = if maze.is_crossing(cell) {
+            maze.bridges[maze.top_bridge_at_crossing[&cell]].orientation.other()
         } else {
-            m.overhead(c).unwrap().other()
+            maze.overhead(cell).unwrap().other()
         };
         match underneath {
             Orient::V => {
-                for ex in [x + near, x + far] {
-                    line(cv, ex, y + near, ex, y + far);
+                for edge in [x + near, x + far] {
+                    grid.line(cv, edge, y + near, edge, y + far);
                 }
             }
             Orient::H => {
-                for ey in [y + near, y + far] {
-                    line(cv, x + near, ey, x + far, ey);
+                for edge in [y + near, y + far] {
+                    grid.line(cv, x + near, edge, x + far, edge);
                 }
             }
         }
     };
     let start_dashing = |cv: &mut Canvas| {
-        ink(cv, HIDDEN_EDGE_DASHES, (wall_width * 0.7).max(0.5));
-        cv.dash(&[s * 0.08, s * 0.07]);
+        grid.ink(cv, HIDDEN_EDGE_GREY, (grid.wall_width * HIDDEN_EDGE_SHARE_OF_WALL).max(THINNEST_HIDDEN_EDGE));
+        cv.dash(&[s * HIDDEN_EDGE_DASH_SHARE_OF_CELL, s * HIDDEN_EDGE_GAP_SHARE_OF_CELL]);
     };
-    let clip_to_cell = |cv: &mut Canvas, c: usize| {
-        let (r, k) = row_col(c);
+    let clip_to_cell = |cv: &mut Canvas, cell: usize| {
         cv.save();
-        rect(cv, k * s, r * s, (k + 1.0) * s, (r + 1.0) * s);
+        grid.whole_cell(cv, cell);
         cv.clip();
     };
 
-    for i in 0..m.bridges.len() {
+    for i in 0..maze.bridges.len() {
         draw_deck(cv, i);
     }
-    let mut crossings_with_top_bridge: Vec<(usize, usize)> = m.top_bridge_at_crossing.iter().map(|(&c, &i)| (c, i)).collect();
+    let mut crossings_with_top_bridge: Vec<(usize, usize)> =
+        maze.top_bridge_at_crossing.iter().map(|(&cell, &i)| (cell, i)).collect();
     crossings_with_top_bridge.sort();
-    for &(c, top) in &crossings_with_top_bridge {
-        clip_to_cell(cv, c);
+    for &(cell, top) in &crossings_with_top_bridge {
+        clip_to_cell(cv, cell);
         draw_deck(cv, top);
         cv.restore();
     }
-    if !back_of_sheet {
+    if !look.back_of_sheet {
         start_dashing(cv);
-        for c in 0..m.zone.len() {
-            if m.bridges_overhead[c] != 0 && !solid_under_single_bridge(c) {
-                outline_what_runs_underneath(cv, c);
+        for cell in 0..maze.zone.len() {
+            let something_runs_underneath = maze.bridges_overhead[cell] != 0
+                && !(maze.solid_under_bridge[cell] && !maze.is_crossing(cell));
+            if something_runs_underneath {
+                outline_what_runs_underneath(cv, cell);
             }
         }
         cv.stroke();
         cv.dash(&[]);
     }
-    for i in 0..m.bridges.len() {
+    for i in 0..maze.bridges.len() {
         solution_along_bridge(cv, i);
     }
-    for &(c, top) in &crossings_with_top_bridge {
-        let lower = m.bridges.iter().position(|b| b.orientation != m.bridges[top].orientation && b.spans.contains(&c)).unwrap();
-        let (lower_bridge, top_bridge) = (&m.bridges[lower], &m.bridges[top]);
+    for &(cell, top) in &crossings_with_top_bridge {
+        let lower = maze.bridges.iter().position(|b| b.orientation != maze.bridges[top].orientation && b.spans.contains(&cell)).unwrap();
+        let (lower_bridge, top_bridge) = (&maze.bridges[lower], &maze.bridges[top]);
         let solution_runs_underneath = steps_on_bridges.contains_key(&(lower_bridge.top_or_left, lower_bridge.bottom_or_right));
         if !solution_runs_underneath {
             continue;
         }
-        clip_to_cell(cv, c);
+        clip_to_cell(cv, cell);
         draw_deck(cv, top);
-        if !back_of_sheet {
+        if !look.back_of_sheet {
             start_dashing(cv);
-            outline_what_runs_underneath(cv, c);
+            outline_what_runs_underneath(cv, cell);
             cv.stroke();
             cv.dash(&[]);
         }
@@ -255,148 +341,149 @@ pub fn draw_maze(cv: &mut Canvas, m: &Maze, at: &Placement, solution: Option<&[u
         }
         cv.restore();
     }
-    if back_of_sheet {
+    if look.back_of_sheet {
         return;
     }
+    draw_finish_bullseye(cv, &grid);
+    draw_start_arrow(cv, &grid);
+    grid.ink(cv, BLACK, grid.wall_width);
+    grid.rect(cv, 0.0, 0.0, grid.width(), grid.height());
+    cv.stroke();
+}
 
-    let symbol_size = s * 0.6;
-    let (gx, gy) = centre(m.goal);
-    for (radius, colour) in [(0.42, WHITE), (0.27, red_to_violet_along_route(1.0)), (0.12, WHITE)] {
+fn draw_finish_bullseye(cv: &mut Canvas, grid: &Grid) {
+    let symbol_size = grid.cell_size * SYMBOL_SHARE_OF_CELL;
+    let (gx, gy) = grid.centre(grid.maze.goal);
+    let finish_colour = red_to_violet_along_route(1.0);
+    for (radius, colour) in [(BULLSEYE_OUTER_RING, WHITE), (BULLSEYE_MIDDLE_RING, finish_colour), (BULLSEYE_CENTRE, WHITE)] {
         cv.colour(colour);
         cv.circle(gx, gy, radius * symbol_size);
         cv.fill();
     }
-    let (cx, cy) = centre(m.start);
-    let only_way_out = m.openings_including_bridges(m.start)[0];
+}
+
+fn draw_start_arrow(cv: &mut Canvas, grid: &Grid) {
+    let w = grid.cell_size * SYMBOL_SHARE_OF_CELL;
+    let (cx, cy) = grid.centre(grid.maze.start);
+    let only_way_out = grid.maze.openings_including_bridges(grid.maze.start)[0];
     let (dr, dc) = (DR[only_way_out] as f64, DC[only_way_out] as f64);
-    let w = symbol_size;
-    let tip = (cx + dc * 0.4 * w, cy + dr * 0.4 * w);
-    let tail = (cx - dc * 0.32 * w, cy - dr * 0.32 * w);
+    let tip = (cx + dc * ARROW_TIP_AHEAD * w, cy + dr * ARROW_TIP_AHEAD * w);
+    let tail = (cx - dc * ARROW_TAIL_BEHIND * w, cy - dr * ARROW_TAIL_BEHIND * w);
     cv.move_to(tip.0, tip.1);
-    cv.line_to(tail.0 - dr * 0.36 * w, tail.1 + dc * 0.36 * w);
-    cv.line_to(tail.0 + dr * 0.36 * w, tail.1 - dc * 0.36 * w);
+    cv.line_to(tail.0 - dr * ARROW_HALF_WIDTH * w, tail.1 + dc * ARROW_HALF_WIDTH * w);
+    cv.line_to(tail.0 + dr * ARROW_HALF_WIDTH * w, tail.1 - dc * ARROW_HALF_WIDTH * w);
     cv.close();
     cv.colour(WHITE);
     cv.fill();
-
-    ink(cv, BLACK, wall_width);
-    rect(cv, 0.0, 0.0, cols * s, rows * s);
-    cv.stroke();
 }
 
-fn draw_ground(cv: &mut Canvas, m: &Maze, at: &Placement, graph_paper: bool, floor_colour: &dyn Fn(usize) -> [f64; 3]) {
-    let (x0, y0, s) = (at.left, at.top, at.cell);
-    let (rows, cols) = (m.rows as f64, m.cols as f64);
-    let (near, far) = path_sides_within_cell(s);
-    let row_col = |c: usize| ((c / m.cols) as f64, (c % m.cols) as f64);
-    let line = |cv: &mut Canvas, x1: f64, y1: f64, x2: f64, y2: f64| cv.line(x0 + x1, y0 + y1, x0 + x2, y0 + y2);
-    let rect = |cv: &mut Canvas, x1: f64, y1: f64, x2: f64, y2: f64| {
-        cv.rect(x0 + x1.min(x2), y0 + y1.min(y2), (x2 - x1).abs(), (y2 - y1).abs())
-    };
-    let solid_under_single_bridge = |c: usize| m.solid_under_bridge[c] && !m.is_crossing(c);
+fn draw_ground(cv: &mut Canvas, grid: &Grid, graph_paper: bool, floor_colour: &dyn Fn(usize) -> Colour) {
+    let maze = grid.maze;
+    let s = grid.cell_size;
+    let (width, height) = (grid.width(), grid.height());
+    let (near, far) = (grid.path_near_side, grid.path_far_side);
     cv.save();
-    rect(cv, 0.0, 0.0, cols * s, rows * s);
+    grid.rect(cv, 0.0, 0.0, width, height);
     cv.clip();
     cv.colour(SOLID_GROUND_HATCHING);
-    cv.width((s * 0.02).max(0.25));
+    cv.width((s * HATCH_LINE_SHARE_OF_CELL).max(THINNEST_HATCH_LINE));
     cv.cap(LineCap::Square);
-    let hatch_spacing = (s * 0.14).max(1.5);
-    let mut k = -rows * s;
-    while k < cols * s {
-        line(cv, k, 0.0, k + rows * s, rows * s);
-        k += hatch_spacing;
+    let hatch_spacing = (s * HATCH_SPACING_SHARE_OF_CELL).max(CLOSEST_HATCH_SPACING);
+    let mut x = -height;
+    while x < width {
+        grid.line(cv, x, 0.0, x + height, height);
+        x += hatch_spacing;
     }
     cv.stroke();
     cv.restore();
     if graph_paper {
         cv.colour(GRAPH_PAPER_BLUE);
-        cv.width(0.3);
-        for r in 0..=m.rows {
-            line(cv, 0.0, r as f64 * s, cols * s, r as f64 * s);
+        cv.width(GRAPH_PAPER_LINE);
+        for row in 0..=maze.rows {
+            grid.line(cv, 0.0, row as f64 * s, width, row as f64 * s);
         }
-        for c in 0..=m.cols {
-            line(cv, c as f64 * s, 0.0, c as f64 * s, rows * s);
+        for col in 0..=maze.cols {
+            grid.line(cv, col as f64 * s, 0.0, col as f64 * s, height);
         }
         cv.stroke();
     }
 
-    for c in 0..m.zone.len() {
-        let (r, k) = row_col(c);
-        cv.colour(floor_colour(c));
-        if m.bridges_overhead[c] == 0 {
-            rect(cv, k * s + near, r * s + near, k * s + far, r * s + far);
-        } else if !solid_under_single_bridge(c) {
-            match m.overhead(c) {
-                Some(Orient::H) => rect(cv, k * s + near, r * s, k * s + far, (r + 1.0) * s),
-                Some(Orient::V) => rect(cv, k * s, r * s + near, (k + 1.0) * s, r * s + far),
+    for cell in 0..maze.zone.len() {
+        let (x, y) = grid.corner(cell);
+        cv.colour(floor_colour(cell));
+        if maze.bridges_overhead[cell] == 0 {
+            grid.path_square(cv, cell);
+        } else if !maze.solid_under_bridge[cell] || maze.is_crossing(cell) {
+            match maze.overhead(cell) {
+                Some(Orient::H) => grid.rect(cv, x + near, y, x + far, y + s),
+                Some(Orient::V) => grid.rect(cv, x, y + near, x + s, y + far),
                 None => {}
             }
         }
-        for d in [1, 3] {
-            if m.is_open(c, d) {
-                let (r2, k2) = row_col(m.step(c, d).unwrap());
-                rect(cv, k * s + near, r * s + near, k2 * s + far, r2 * s + far);
+        for direction in [SOUTH, EAST] {
+            if maze.is_open(cell, direction) {
+                let (x2, y2) = grid.corner(maze.step(cell, direction).unwrap());
+                grid.rect(cv, x + near, y + near, x2 + far, y2 + far);
             }
         }
         cv.fill();
     }
 
-    for (end, fraction_of_route) in [(m.start, 0.0), (m.goal, 1.0)] {
-        let (r, k) = row_col(end);
+    for (end, fraction_of_route) in [(maze.start, 0.0), (maze.goal, 1.0)] {
         cv.colour(red_to_violet_along_route(fraction_of_route));
-        rect(cv, k * s + near, r * s + near, k * s + far, r * s + far);
+        grid.path_square(cv, end);
         cv.fill();
     }
 }
 
-fn draw_path_edges(cv: &mut Canvas, m: &Maze, at: &Placement) {
-    let (x0, y0, s) = (at.left, at.top, at.cell);
-    let (near, far) = path_sides_within_cell(s);
-    let line = |cv: &mut Canvas, x1: f64, y1: f64, x2: f64, y2: f64| cv.line(x0 + x1, y0 + y1, x0 + x2, y0 + y2);
+fn draw_path_edges(cv: &mut Canvas, grid: &Grid) {
+    let maze = grid.maze;
+    let s = grid.cell_size;
+    let (near, far) = (grid.path_near_side, grid.path_far_side);
     cv.colour(BLACK);
-    cv.width((s * 0.06).max(0.6));
+    cv.width(grid.wall_width);
     cv.cap(LineCap::Square);
-    for c in 0..m.zone.len() {
-        if m.floorless(c) {
+    for cell in 0..maze.zone.len() {
+        if maze.floorless(cell) {
             continue;
         }
-        let (x, y) = ((c % m.cols) as f64 * s, (c / m.cols) as f64 * s);
-        if let Some(bridge_overhead) = m.overhead(c) {
+        let (x, y) = grid.corner(cell);
+        if let Some(bridge_overhead) = maze.overhead(cell) {
             match bridge_overhead {
                 Orient::H => {
-                    for ex in [x + near, x + far] {
-                        line(cv, ex, y, ex, y + near);
-                        line(cv, ex, y + far, ex, y + s);
+                    for edge in [x + near, x + far] {
+                        grid.line(cv, edge, y, edge, y + near);
+                        grid.line(cv, edge, y + far, edge, y + s);
                     }
                 }
                 Orient::V => {
-                    for ey in [y + near, y + far] {
-                        line(cv, x, ey, x + near, ey);
-                        line(cv, x + far, ey, x + s, ey);
+                    for edge in [y + near, y + far] {
+                        grid.line(cv, x, edge, x + near, edge);
+                        grid.line(cv, x + far, edge, x + s, edge);
                     }
                 }
             }
             continue;
         }
-        let opens = m.openings_including_bridges(c);
-        for d in 0..4 {
-            let (dr, dc) = (DR[d], DC[d]);
-            if opens.contains(&d) {
+        let opens = maze.openings_including_bridges(cell);
+        for direction in 0..4 {
+            let (dr, dc) = (DR[direction], DC[direction]);
+            if opens.contains(&direction) {
                 if dr != 0 {
-                    let (ey0, ey1) = if dr < 0 { (y, y + near) } else { (y + far, y + s) };
-                    line(cv, x + near, ey0, x + near, ey1);
-                    line(cv, x + far, ey0, x + far, ey1);
+                    let (y0, y1) = if dr < 0 { (y, y + near) } else { (y + far, y + s) };
+                    grid.line(cv, x + near, y0, x + near, y1);
+                    grid.line(cv, x + far, y0, x + far, y1);
                 } else {
-                    let (ex0, ex1) = if dc < 0 { (x, x + near) } else { (x + far, x + s) };
-                    line(cv, ex0, y + near, ex1, y + near);
-                    line(cv, ex0, y + far, ex1, y + far);
+                    let (x0, x1) = if dc < 0 { (x, x + near) } else { (x + far, x + s) };
+                    grid.line(cv, x0, y + near, x1, y + near);
+                    grid.line(cv, x0, y + far, x1, y + far);
                 }
             } else if dr != 0 {
-                let ey = y + if dr < 0 { near } else { far };
-                line(cv, x + near, ey, x + far, ey);
+                let wall_y = y + if dr < 0 { near } else { far };
+                grid.line(cv, x + near, wall_y, x + far, wall_y);
             } else {
-                let ex = x + if dc < 0 { near } else { far };
-                line(cv, ex, y + near, ex, y + far);
+                let wall_x = x + if dc < 0 { near } else { far };
+                grid.line(cv, wall_x, y + near, wall_x, y + far);
             }
         }
     }
@@ -427,49 +514,46 @@ struct Area {
 
 fn draw_item_centred_with_caption(
     cv: &mut Canvas,
-    it: &Item,
+    item: &Item,
     opts: &Options,
     area: Area,
     font: f64,
     back_of_sheet: bool,
     signature: Option<&str>,
 ) {
-    let m = it.maze;
+    let maze = item.maze;
     let caption_space = font * CAPTION_LINES_OF_SPACE;
-    let s = (area.width / m.cols as f64).min((area.height - caption_space) / m.rows as f64);
-    let x0 = area.left + (area.width - s * m.cols as f64) / 2.0;
-    let y0 = area.top + (area.height - caption_space - s * m.rows as f64) / 2.0;
-    let at = Placement { left: x0, top: y0, cell: s };
+    let cell_size = (area.width / maze.cols as f64).min((area.height - caption_space) / maze.rows as f64);
+    let (maze_width, maze_height) = (cell_size * maze.cols as f64, cell_size * maze.rows as f64);
+    let left = area.left + (area.width - maze_width) / 2.0;
+    let top = area.top + (area.height - caption_space - maze_height) / 2.0;
+    let at = Placement { left, top, cell_size };
     if back_of_sheet {
         let look = Look { graph_paper: false, zone_tints: false, back_of_sheet: true };
-        draw_maze(cv, m, &at, it.solution, &look);
+        draw_maze(cv, maze, &at, item.solution, &look);
         return;
     }
-    let caption_baseline = y0 + s * m.rows as f64 + caption_space * 0.8;
-    let shown = if it.solution_drawn_on_maze { it.solution } else { None };
+    let caption_baseline = top + maze_height + caption_space * CAPTION_BASELINE_DOWN_ITS_SPACE;
+    let shown = if item.solution_drawn_on_maze { item.solution } else { None };
     let look = Look {
         graph_paper: opts.graph_paper,
-        zone_tints: opts.zone_tints_on_answers && it.solution_drawn_on_maze,
+        zone_tints: opts.zone_tints_on_answers && item.solution_drawn_on_maze,
         back_of_sheet: false,
     };
-    draw_maze(cv, m, &at, shown, &look);
+    draw_maze(cv, maze, &at, shown, &look);
     cv.colour(LABEL_GREY);
-    cv.text(x0, caption_baseline, font, &it.label);
-    let small = font * 0.85;
+    cv.text(left, caption_baseline, font, &item.label);
+    let small = font * CODE_AND_SIGNATURE_SHARE_OF_FONT;
     cv.colour(CAPTION_GREY);
-    if let Some(seed) = it.seed_printed_as_code {
+    if let Some(seed) = item.seed_printed_as_code {
         let code = crate::seed_code::encode(seed);
-        cv.text(x0 + s * m.cols as f64 - helvetica_width_in_points(&code, small), caption_baseline, small, &code);
+        cv.text(left + maze_width - helvetica_width_in_points(&code, small), caption_baseline, small, &code);
     }
     if let Some(signature) = signature {
-        let centred = x0 + (s * m.cols as f64 - helvetica_width_in_points(signature, small)) / 2.0;
+        let centred = left + (maze_width - helvetica_width_in_points(signature, small)) / 2.0;
         cv.text(centred, caption_baseline, small, signature);
     }
 }
-
-const PAGE_MARGIN: f64 = 0.5 * 72.0;
-const GUTTER_BETWEEN_MAZES: f64 = 0.3 * 72.0;
-const CAPTION_LINES_OF_SPACE: f64 = 1.6;
 
 struct PageGrid {
     cols: usize,
@@ -485,7 +569,7 @@ fn page_grid(per_page: usize) -> PageGrid {
         cols,
         box_width: (PAGE_W - 2.0 * PAGE_MARGIN - (cols - 1) as f64 * GUTTER_BETWEEN_MAZES) / cols as f64,
         box_height: (PAGE_H - 2.0 * PAGE_MARGIN - (rows - 1) as f64 * GUTTER_BETWEEN_MAZES) / rows as f64,
-        font: if per_page == 1 { 9.0 } else { 7.5 },
+        font: if per_page == 1 { FONT_ONE_PER_PAGE } else { FONT_FOUR_PER_PAGE },
     }
 }
 
@@ -510,7 +594,7 @@ pub fn render_pages(items: &[Item], opts: &Options, back_of_sheet: bool) -> Vec<
                 cv.mirror_left_to_right_from_here_on();
             }
             let bottom_left = (chunk.len() - 1) / grid.cols * grid.cols;
-            for (k, it) in chunk.iter().enumerate() {
+            for (k, item) in chunk.iter().enumerate() {
                 let (row, col) = (k / grid.cols, k % grid.cols);
                 let area = Area {
                     left: PAGE_MARGIN + col as f64 * (grid.box_width + GUTTER_BETWEEN_MAZES),
@@ -519,7 +603,7 @@ pub fn render_pages(items: &[Item], opts: &Options, back_of_sheet: bool) -> Vec<
                     height: grid.box_height,
                 };
                 let signature = opts.signature_once_a_page.as_deref().filter(|_| k == bottom_left);
-                draw_item_centred_with_caption(&mut cv, it, opts, area, grid.font, back_of_sheet, signature);
+                draw_item_centred_with_caption(&mut cv, item, opts, area, grid.font, back_of_sheet, signature);
             }
             cv.restore();
             cv
