@@ -351,7 +351,6 @@ fn run_book(argv: &[String]) -> Result<(), String> {
 fn run_checks(first: u64, last: u64) -> bool {
     let mut bad = 0;
     let mut all = check::LoopStats::default();
-    let (mut ground, mut cells) = (0, 0);
     for seed in first..last {
         let l = &LEVELS[seed as usize % LEVELS.len()];
         let (cols, rows) = (l.cols, l.rows);
@@ -371,8 +370,6 @@ fn run_checks(first: u64, last: u64) -> bool {
         let errs = check::check(&m);
         let s = &m.stats;
         let l = check::loop_stats(&m);
-        ground += (0..m.zone.len()).filter(|&c| m.solid[c] && m.under[c] == 0).count();
-        cells += m.zone.len();
         all.loops += l.loops;
         all.wrapping += l.wrapping;
         all.around += l.around;
@@ -401,7 +398,6 @@ fn run_checks(first: u64, last: u64) -> bool {
     }
     println!("{} of {} mazes passed", (last - first) as usize - bad, last - first);
     let pct = |a: usize, b: usize| 100.0 * a as f64 / b.max(1) as f64;
-    println!("ground left uncarved: {:.1}% of cells", pct(ground, cells));
     println!(
         "loops: {}; around another zone {:.0}%, only across one {:.0}%; links whose shortest loop wraps {:.0}%",
         all.loops,

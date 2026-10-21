@@ -323,7 +323,7 @@ fn draw_ground(cv: &mut Canvas, m: &Maze, x0: f64, y0: f64, s: f64, graph_paper:
         let (r, k) = rc(c);
         cv.colour(floor(c));
         match m.under[c] {
-            0 if !m.solid[c] => rect(cv, k * s + p0, r * s + p0, k * s + p1, r * s + p1),
+            0 => rect(cv, k * s + p0, r * s + p0, k * s + p1, r * s + p1),
             1 if !solid(c) => rect(cv, k * s + p0, r * s, k * s + p1, (r + 1.0) * s),
             2 if !solid(c) => rect(cv, k * s, r * s + p0, (k + 1.0) * s, r * s + p1),
             _ => {}
