@@ -9,8 +9,8 @@ pub const MANY_FORKS: f64 = 0.19;
 pub const ZONE_CONTACT: f64 = 0.15;
 pub const LONGER_BRIDGES: f64 = 0.07;
 pub const ZONE_COUNT: f64 = 0.05;
-pub const WALKING_DISTANCE: f64 = 0.04;
-pub const CROW_FLIES_CLOSENESS: f64 = 0.02;
+pub const WALKING_DISTANCE: f64 = 0.05;
+pub const CROW_FLIES_CLOSENESS: f64 = 0.01;
 
 pub const CELLS_PER_ZONE: f64 = 100.0;
 pub const LOOP_IN_BOARD_SPANS_FOR_FULL_MARKS: f64 = 1.0;

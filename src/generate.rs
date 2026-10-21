@@ -42,7 +42,7 @@ impl Maze {
             let growing = route.iter().copied().filter(|&c| m.zone[c] == z).collect();
             m.grow_tree(&mut in_tree, growing, true, rng);
         }
-        m.choose_start_and_finish_among_dead_ends();
+        m.choose_start_and_finish_among_dead_ends(rng);
         m.join_or_fill_in_every_dead_end(rng);
         m
     }
@@ -184,22 +184,24 @@ impl Maze {
         }
     }
 
-    fn choose_start_and_finish_among_dead_ends(&mut self) {
+    fn choose_start_and_finish_among_dead_ends(&mut self, rng: &mut Rng) {
         let last_zone = self.zone_count as u8 - 1;
         let dead_ends_in = |z: u8| (0..self.zone.len()).filter(|&c| self.zone[c] == z && self.degree(c) == 1).collect::<Vec<_>>();
         let (starts, finishes) = (dead_ends_in(0), dead_ends_in(last_zone));
-        let mut best = (f64::MIN, starts[0], finishes[0]);
+        let mut pairs = Vec::new();
+        let mut pulls = Vec::new();
         for &a in &starts {
             let walking = self.walking_distances_from(a);
             for &b in finishes.iter().filter(|&&b| b != a) {
-                let pull = goals::WALKING_DISTANCE * walking_score(self, walking[b])
-                    + goals::CROW_FLIES_CLOSENESS * crow_flies_score(self, a, b);
-                if pull > best.0 {
-                    best = (pull, a, b);
-                }
+                pairs.push((a, b));
+                pulls.push(
+                    STEP_BASELINE
+                        + goals::WALKING_DISTANCE * walking_score(self, walking[b])
+                        + goals::CROW_FLIES_CLOSENESS * crow_flies_score(self, a, b),
+                );
             }
         }
-        (self.start, self.goal) = (best.1, best.2);
+        (self.start, self.goal) = pairs[rng.index_by_weight(&leaning(&pulls))];
     }
 
     fn grow_zones_toward_each_other(&mut self, rng: &mut Rng) {
