@@ -104,7 +104,7 @@ impl Maze {
         loop {
             m.move_cells_with_one_neighbour_in_their_zone(&route, &pieces);
             let before = jumps.len();
-            m.undo_jumps_that_would_leave_a_dead_end(&mut jumps);
+            m.undo_jumps_that_would_leave_a_dead_end(&mut jumps, &route, &pieces);
             pieces = m.pieces_of(&jumps);
             if jumps.len() == before {
                 break;
@@ -430,13 +430,24 @@ impl Maze {
         pieces
     }
 
-    fn undo_jumps_that_would_leave_a_dead_end(&mut self, jumps: &mut Vec<Jump>) {
+    fn undo_jumps_that_would_leave_a_dead_end(&mut self, jumps: &mut Vec<Jump>, route: &[usize], pieces: &Pieces) {
         let has_another_of_its_zone_beside =
             |m: &Maze, s: usize| (0..4).filter_map(|d| m.step(s, d)).any(|q| m.zone[q] == m.zone[s] && !m.under_a_bridge(q));
         let mut i = 0;
         while i < jumps.len() {
-            let j = &jumps[i];
-            let usable = j.sides.iter().flatten().chain([&j.to]).all(|&s| has_another_of_its_zone_beside(self, s));
+            let ends: Vec<usize> = jumps[i].sides.iter().flatten().chain([&jumps[i].to]).copied().collect();
+            for &end in &ends {
+                if has_another_of_its_zone_beside(self, end) {
+                    continue;
+                }
+                let free = |q: usize| !self.under_a_bridge(q) && !route.contains(&q) && !pieces.holds(q) && self.zone[q] != NO_ZONE;
+                let other_partners = |q: usize| (0..4).filter_map(|d| self.step(q, d)).filter(|&x| x != end && self.zone[x] == self.zone[end] && !self.under_a_bridge(x)).count();
+                let handed_over = (0..4).filter_map(|d| self.step(end, d)).filter(|&q| free(q) && other_partners(q) > 0).max_by_key(|&q| other_partners(q));
+                if let Some(q) = handed_over {
+                    self.zone[q] = self.zone[end];
+                }
+            }
+            let usable = ends.iter().all(|&s| has_another_of_its_zone_beside(self, s));
             if usable {
                 i += 1;
                 continue;
