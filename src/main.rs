@@ -357,10 +357,11 @@ fn run_checks(first: u64, last: u64) -> bool {
         all.wrapping_links += l.wrapping_links;
         if errs.is_empty() {
             println!(
-                "{what}: ok  {:>3.0} ms  {} strand crossings, {} hops, {} junctions, loops {} ({} around, {} across), layouts tried {}",
+                "{what}: ok  {:>3.0} ms  {} strand crossings, {} hops, {} rings, {} junctions, loops {} ({} around, {} across), layouts tried {}",
                 ms,
                 s.crossings,
                 s.hops,
+                s.rings,
                 m.junctions(),
                 l.loops,
                 l.around,

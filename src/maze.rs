@@ -86,6 +86,8 @@ const ZONE_SNAKE: f64 = 0.85; // how often a zone grows from its newest block
 const CROSS_WEIGHT: f64 = 3.0; // pull toward crossing over another strand
 const UNDER_WEIGHT: f64 = 3.0; // pull toward slipping under another strand
 const CROSS_BLOCKS: usize = 2; // most blocks one strand crossing may span
+const RING_WEIGHT: f64 = 6.0; // pull toward closing a ring round another strand
+const RING_BLOCKS: usize = 6; // fewest blocks round a ring
 const ZONE_WIGGLE: usize = 3; // edge-wiggling passes (times the cell count)
 const ZONE_FLOOR: f64 = 0.8; // wiggling never shrinks a zone below this share
 
@@ -125,6 +127,7 @@ pub struct Stats {
     pub layouts: usize,     // zone layouts drawn before one could be ordered
     pub crossings: usize,   // bridges where one strand crosses another
     pub hops: usize,        // bridges where a boxed-in corridor hopped over
+    pub rings: usize,       // strands closed into a ring round another strand
 }
 
 /// Rows (or columns) split into blocks ZONE_BLOCK wide; the last takes
@@ -142,6 +145,8 @@ struct Layout {
     cols: Vec<(usize, usize)>,
     owner: Vec<u8>,
     cells: Vec<Vec<usize>>,
+    /// For each block, the blocks of its own strand it reaches by bridge.
+    links: Vec<Vec<usize>>,
 }
 
 impl Layout {
@@ -159,6 +164,73 @@ impl Layout {
     }
     fn own_adjacent(&self, b: usize, z: u8) -> usize {
         (0..4).filter_map(|d| self.step(b, d)).filter(|&x| self.owner[x] == z).count()
+    }
+
+    /// The blocks of strand z joined to b, side by side or by bridge.
+    fn strand_next(&self, b: usize, z: u8) -> Vec<usize> {
+        let mut out: Vec<usize> = (0..4).filter_map(|d| self.step(b, d)).filter(|&x| self.owner[x] == z).collect();
+        out.extend(&self.links[b]);
+        out
+    }
+
+    /// Would strand z growing into `via`, a block joining its blocks a and
+    /// b (`bridged`: b across a bridge), close a ring that winds round
+    /// another strand? The ring is the shortest way back from b to a along
+    /// the strand. It must be at least RING_BLOCKS round, and either cross a
+    /// bridge (every bridge passes over or under another strand) or have
+    /// another strand's block inside it.
+    fn closes_ring(&self, z: u8, a: usize, b: usize, via: usize, bridged: bool) -> bool {
+        let mut prev = vec![usize::MAX; self.owner.len()];
+        prev[b] = b;
+        let mut q = VecDeque::from([b]);
+        while let Some(x) = q.pop_front() {
+            if x == a {
+                break;
+            }
+            for y in self.strand_next(x, z) {
+                if prev[y] == usize::MAX {
+                    prev[y] = x;
+                    q.push_back(y);
+                }
+            }
+        }
+        if prev[a] == usize::MAX {
+            return false;
+        }
+        // Round the ring: a back along the strand to b, then via (if any).
+        let mut ring = vec![a];
+        let mut bridged = bridged;
+        while *ring.last().unwrap() != b {
+            let x = *ring.last().unwrap();
+            bridged |= self.links[x].contains(&prev[x]);
+            ring.push(prev[x]);
+        }
+        ring.push(via);
+        ring.push(a);
+        if ring.len() - 1 < RING_BLOCKS {
+            return false;
+        }
+        if bridged {
+            return true;
+        }
+        // Another strand's block inside: count the ring's upright sides to
+        // its right, just below the block's middle.
+        let nbc = self.nbc();
+        let sides: Vec<(usize, f64, f64)> = ring
+            .windows(2)
+            .filter(|w| w[0] % nbc == w[1] % nbc)
+            .map(|w| {
+                let (ra, rb) = ((w[0] / nbc) as f64, (w[1] / nbc) as f64);
+                (w[0] % nbc, ra.min(rb), ra.max(rb))
+            })
+            .collect();
+        (0..self.owner.len()).any(|x| {
+            let w = self.owner[x];
+            let y = (x / nbc) as f64 + 0.01;
+            w != NONE
+                && w != z
+                && sides.iter().filter(|&&(k, lo, hi)| k > x % nbc && lo < y && y < hi).count() % 2 == 1
+        })
     }
 }
 
@@ -413,7 +485,7 @@ impl Maze {
             }
         }
         let nb = cells.len();
-        let mut lay = Layout { rows, cols, owner: vec![NONE; nb], cells };
+        let mut lay = Layout { rows, cols, owner: vec![NONE; nb], cells, links: vec![Vec::new(); nb] };
 
         // Seeds as far apart as they can be, so no strand starts boxed in.
         let nbc = lay.nbc();
@@ -514,6 +586,15 @@ impl Maze {
             for d in 0..4 {
                 let Some(t) = lay.step(s, d) else { continue };
                 if lay.owner[t] == NONE {
+                    // Back beside the strand's own blocks: close a ring.
+                    if lay.own_adjacent(t, z) == 2 {
+                        let own: Vec<usize> =
+                            (0..4).filter_map(|e| lay.step(t, e)).filter(|&x| lay.owner[x] == z).collect();
+                        if lay.closes_ring(z, own[0], own[1], t, false) {
+                            out.push((Grow::Step(t), RING_WEIGHT));
+                        }
+                        continue;
+                    }
                     if lay.own_adjacent(t, z) != 1 {
                         continue;
                     }
@@ -539,8 +620,17 @@ impl Maze {
                     }
                     let Some(beyond) = lay.step(x, d) else { break };
                     if lay.owner[beyond] == NONE {
-                        if lay.own_adjacent(beyond, z) == 0 {
-                            out.push((Grow::Over(s, beyond), CROSS_WEIGHT / (k * k) as f64));
+                        match lay.own_adjacent(beyond, z) {
+                            0 => out.push((Grow::Over(s, beyond), CROSS_WEIGHT / (k * k) as f64)),
+                            // Over another strand and back beside its own
+                            // blocks: a ring through the bridge.
+                            1 => {
+                                let q = (0..4).filter_map(|e| lay.step(beyond, e)).find(|&x| lay.owner[x] == z).unwrap();
+                                if lay.closes_ring(z, q, s, beyond, true) {
+                                    out.push((Grow::Over(s, beyond), RING_WEIGHT / (k * k) as f64));
+                                }
+                            }
+                            _ => {}
                         }
                         break;
                     }
@@ -628,6 +718,11 @@ impl Maze {
         let t = match o {
             Grow::Step(t) | Grow::Over(_, t) | Grow::Under(t, ..) => t,
         };
+        let ring = match o {
+            Grow::Step(t) => lay.own_adjacent(t, z) == 2,
+            Grow::Over(_, t) => lay.own_adjacent(t, z) == 1,
+            Grow::Under(..) => false,
+        };
         self.claim(lay, t, z);
         let ok = match o {
             Grow::Step(_) => self.zone_sound(z),
@@ -635,6 +730,18 @@ impl Maze {
             Grow::Under(_, f1, f2) => self.zone_sound(z) && self.try_bridge(lay, f1, f2, rng),
         };
         if ok {
+            match o {
+                Grow::Over(s, t) => {
+                    lay.links[s].push(t);
+                    lay.links[t].push(s);
+                }
+                Grow::Under(_, f1, f2) => {
+                    lay.links[f1].push(f2);
+                    lay.links[f2].push(f1);
+                }
+                Grow::Step(_) => {}
+            }
+            self.stats.rings += ring as usize;
             return Some(t);
         }
         *self = saved;
