@@ -60,16 +60,4 @@ impl Xoshiro256StarStar {
             v.swap(i, self.below(i + 1));
         }
     }
-
-    pub fn index_by_weight(&mut self, weights: &[f64]) -> usize {
-        let total: f64 = weights.iter().sum();
-        let mut x = self.from_zero_to_one() * total;
-        for (i, &weight) in weights.iter().enumerate() {
-            if x < weight {
-                return i;
-            }
-            x -= weight;
-        }
-        weights.len() - 1
-    }
 }

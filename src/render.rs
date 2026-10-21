@@ -145,11 +145,6 @@ impl<'a> Grid<'a> {
         self.rect(cv, x + near, y + near, x + far, y + far);
     }
 
-    fn whole_cell(&self, cv: &mut Canvas, cell: usize) {
-        let (x, y) = self.corner(cell);
-        self.rect(cv, x, y, x + self.cell_size, y + self.cell_size);
-    }
-
     fn ink(&self, cv: &mut Canvas, colour: Colour, width: f64) {
         cv.colour(colour);
         cv.width(width);
@@ -267,12 +262,7 @@ pub fn draw_maze(cv: &mut Canvas, maze: &Maze, at: &Placement, solution: Option<
     };
     let outline_what_runs_underneath = |cv: &mut Canvas, cell: usize| {
         let (x, y) = grid.corner(cell);
-        let underneath = if maze.is_crossing(cell) {
-            maze.bridges[maze.top_bridge_at_crossing[&cell]].orientation.other()
-        } else {
-            maze.overhead(cell).unwrap().other()
-        };
-        match underneath {
+        match maze.overhead(cell).unwrap().other() {
             Orient::V => {
                 for edge in [x + near, x + far] {
                     grid.line(cv, edge, y + near, edge, y + far);
@@ -289,29 +279,13 @@ pub fn draw_maze(cv: &mut Canvas, maze: &Maze, at: &Placement, solution: Option<
         grid.ink(cv, HIDDEN_EDGE_GREY, (grid.wall_width * HIDDEN_EDGE_SHARE_OF_WALL).max(THINNEST_HIDDEN_EDGE));
         cv.dash(&[s * HIDDEN_EDGE_DASH_SHARE_OF_CELL, s * HIDDEN_EDGE_GAP_SHARE_OF_CELL]);
     };
-    let clip_to_cell = |cv: &mut Canvas, cell: usize| {
-        cv.save();
-        grid.whole_cell(cv, cell);
-        cv.clip();
-    };
-
     for i in 0..maze.bridges.len() {
         draw_deck(cv, i);
-    }
-    let mut crossings_with_top_bridge: Vec<(usize, usize)> =
-        maze.top_bridge_at_crossing.iter().map(|(&cell, &i)| (cell, i)).collect();
-    crossings_with_top_bridge.sort();
-    for &(cell, top) in &crossings_with_top_bridge {
-        clip_to_cell(cv, cell);
-        draw_deck(cv, top);
-        cv.restore();
     }
     if !look.back_of_sheet {
         start_dashing(cv);
         for cell in 0..maze.zone.len() {
-            let something_runs_underneath = maze.bridges_overhead[cell] != 0
-                && !(maze.solid_under_bridge[cell] && !maze.is_crossing(cell));
-            if something_runs_underneath {
+            if maze.bridges_overhead[cell] != 0 {
                 outline_what_runs_underneath(cv, cell);
             }
         }
@@ -320,26 +294,6 @@ pub fn draw_maze(cv: &mut Canvas, maze: &Maze, at: &Placement, solution: Option<
     }
     for i in 0..maze.bridges.len() {
         solution_along_bridge(cv, i);
-    }
-    for &(cell, top) in &crossings_with_top_bridge {
-        let lower = maze.bridges.iter().position(|b| b.orientation != maze.bridges[top].orientation && b.spans.contains(&cell)).unwrap();
-        let (lower_bridge, top_bridge) = (&maze.bridges[lower], &maze.bridges[top]);
-        let solution_runs_underneath = steps_on_bridges.contains_key(&(lower_bridge.top_or_left, lower_bridge.bottom_or_right));
-        if !solution_runs_underneath {
-            continue;
-        }
-        clip_to_cell(cv, cell);
-        draw_deck(cv, top);
-        if !look.back_of_sheet {
-            start_dashing(cv);
-            outline_what_runs_underneath(cv, cell);
-            cv.stroke();
-            cv.dash(&[]);
-        }
-        if steps_on_bridges.contains_key(&(top_bridge.top_or_left, top_bridge.bottom_or_right)) {
-            solution_along_bridge(cv, top);
-        }
-        cv.restore();
     }
     if look.back_of_sheet {
         return;
@@ -413,11 +367,10 @@ fn draw_ground(cv: &mut Canvas, grid: &Grid, graph_paper: bool, floor_colour: &d
         cv.colour(floor_colour(cell));
         if maze.bridges_overhead[cell] == 0 {
             grid.path_square(cv, cell);
-        } else if !maze.solid_under_bridge[cell] || maze.is_crossing(cell) {
-            match maze.overhead(cell) {
-                Some(Orient::H) => grid.rect(cv, x + near, y, x + far, y + s),
-                Some(Orient::V) => grid.rect(cv, x, y + near, x + s, y + far),
-                None => {}
+        } else {
+            match maze.overhead(cell).unwrap() {
+                Orient::H => grid.rect(cv, x + near, y, x + far, y + s),
+                Orient::V => grid.rect(cv, x, y + near, x + s, y + far),
             }
         }
         for direction in [SOUTH, EAST] {
@@ -444,9 +397,6 @@ fn draw_path_edges(cv: &mut Canvas, grid: &Grid) {
     cv.width(grid.wall_width);
     cv.cap(LineCap::Square);
     for cell in 0..maze.zone.len() {
-        if maze.floorless(cell) {
-            continue;
-        }
         let (x, y) = grid.corner(cell);
         if let Some(bridge_overhead) = maze.overhead(cell) {
             match bridge_overhead {

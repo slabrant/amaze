@@ -18,13 +18,13 @@ struct WayOut {
 }
 
 impl Maze {
-    pub fn generate(rows: usize, cols: usize, zone_count: usize, rng: &mut Rng) -> Result<Maze, String> {
+    pub fn generate(rows: usize, cols: usize, zone_count: usize, rng: &mut Rng) -> Maze {
         let route = Maze::empty(rows, cols, 1).longest_path_of_a_tree(rng);
         let mut m = Maze::empty(rows, cols, zone_count);
         m.lay_route_in_zones(&route);
         m.grow_zones_out_from_the_route(&route, rng);
         m.join_every_dead_end(rng);
-        Ok(m)
+        m
     }
 
     fn under_a_bridge(&self, c: usize) -> bool {
@@ -65,10 +65,7 @@ impl Maze {
     fn take(&mut self, from: usize, w: WayOut) {
         match w.way {
             Way::Wall(d) => self.open_wall(from, d),
-            Way::Bridge => {
-                let passages_under = vec![false; self.cells_between(from, w.to).len()];
-                self.lay_bridge(from, w.to, &passages_under);
-            }
+            Way::Bridge => self.lay_bridge(from, w.to),
         }
     }
 

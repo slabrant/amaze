@@ -24,7 +24,7 @@ impl ShapeCensus {
 }
 
 fn corridor_exits(m: &Maze, cell: usize) -> Option<[usize; 2]> {
-    if m.floorless(cell) || !m.bridged_to[cell].is_empty() || m.bridges_overhead[cell] != 0 {
+    if !m.bridged_to[cell].is_empty() || m.bridges_overhead[cell] != 0 {
         return None;
     }
     let exits: Vec<usize> = (0..4).filter(|&d| m.is_open(cell, d)).collect();
@@ -41,9 +41,7 @@ fn is_turn(exits: [usize; 2]) -> bool {
 pub fn count_shapes(m: &Maze) -> ShapeCensus {
     let mut census = ShapeCensus::default();
     for cell in 0..m.zone.len() {
-        if !m.floorless(cell) {
-            census.path_cells += 1;
-        }
+        census.path_cells += 1;
         if m.degree(cell) >= 3 {
             census.junctions += 1;
         }

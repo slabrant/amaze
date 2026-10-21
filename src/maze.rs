@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 
 use crate::seeded_rng::Rng;
 
@@ -9,8 +9,6 @@ pub const EAST: usize = 3;
 pub const DR: [isize; 4] = [-1, 1, 0, 0];
 pub const DC: [isize; 4] = [0, 0, -1, 1];
 pub const NO_ZONE: u8 = u8::MAX;
-pub const CROSSING: u8 = 0b11;
-
 
 pub fn opposite(d: usize) -> usize {
     d ^ 1
@@ -67,15 +65,12 @@ pub struct Maze {
     pub zone: Vec<u8>,
     pub open_walls: Vec<u8>,
     pub bridges_overhead: Vec<u8>,
-    pub solid_under_bridge: Vec<bool>,
     pub bridged_to: Vec<Vec<usize>>,
     pub bridges: Vec<Bridge>,
-    pub top_bridge_at_crossing: HashMap<usize, usize>,
     pub zone_crossings: Vec<(usize, usize)>,
     pub start: usize,
     pub goal: usize,
 }
-
 
 impl Maze {
     pub(crate) fn empty(rows: usize, cols: usize, zone_count: usize) -> Maze {
@@ -87,10 +82,8 @@ impl Maze {
             zone: vec![NO_ZONE; n],
             open_walls: vec![0; n],
             bridges_overhead: vec![0; n],
-            solid_under_bridge: vec![false; n],
             bridged_to: vec![Vec::new(); n],
             bridges: Vec::new(),
-            top_bridge_at_crossing: HashMap::new(),
             zone_crossings: Vec::new(),
             start: 0,
             goal: 0,
@@ -107,43 +100,8 @@ impl Maze {
         }
     }
 
-    pub fn adjacent(&self, a: usize, b: usize) -> bool {
-        (a / self.cols).abs_diff(b / self.cols) + (a % self.cols).abs_diff(b % self.cols) == 1
-    }
-
-    pub fn is_crossing(&self, c: usize) -> bool {
-        self.bridges_overhead[c] == CROSSING
-    }
-
     pub fn overhead(&self, c: usize) -> Option<Orient> {
         [Orient::H, Orient::V].into_iter().find(|o| self.bridges_overhead[c] == o.bit())
-    }
-
-    pub fn floorless(&self, c: usize) -> bool {
-        self.solid_under_bridge[c] || self.is_crossing(c)
-    }
-
-    pub fn untouched_by_bridges(&self, c: usize) -> bool {
-        self.bridges_overhead[c] == 0 && !self.solid_under_bridge[c] && self.bridged_to[c].is_empty()
-    }
-
-    fn may_open_toward(&self, c: usize, d: usize) -> bool {
-        !self.floorless(c)
-            && match self.overhead(c) {
-                None => true,
-                Some(bridge) => Orient::of_direction(d) == bridge.other(),
-            }
-    }
-
-    pub fn can_open(&self, c: usize, d: usize, same_zone: bool) -> Option<usize> {
-        let n = self.step(c, d)?;
-        if !self.may_open_toward(c, d) || !self.may_open_toward(n, d) {
-            return None;
-        }
-        if same_zone && (self.zone[c] == NO_ZONE || self.zone[c] != self.zone[n]) {
-            return None;
-        }
-        Some(n)
     }
 
     pub fn is_open(&self, c: usize, d: usize) -> bool {
@@ -154,12 +112,6 @@ impl Maze {
         let n = self.step(c, d).unwrap();
         self.open_walls[c] |= 1 << d;
         self.open_walls[n] |= 1 << opposite(d);
-    }
-
-    pub fn close_wall(&mut self, c: usize, d: usize) {
-        let n = self.step(c, d).unwrap();
-        self.open_walls[c] &= !(1 << d);
-        self.open_walls[n] &= !(1 << opposite(d));
     }
 
     pub fn degree(&self, c: usize) -> usize {
@@ -204,15 +156,12 @@ impl Maze {
         out
     }
 
-    pub fn lay_bridge(&mut self, a: usize, b: usize, solid_or_passage_under: &[bool]) {
+    pub fn lay_bridge(&mut self, a: usize, b: usize) {
         let (a, b) = (a.min(b), a.max(b));
         let orientation = Orient::of_direction(self.direction_toward(a, b));
         let spans = self.cells_between(a, b);
-        for (i, &m) in spans.iter().enumerate() {
+        for &m in &spans {
             self.bridges_overhead[m] |= orientation.bit();
-            if solid_or_passage_under[i] {
-                self.solid_under_bridge[m] = true;
-            }
         }
         self.bridged_to[a].push(b);
         self.bridged_to[b].push(a);
@@ -245,6 +194,21 @@ impl Maze {
         }
         route.reverse();
         Some(route)
+    }
+
+    pub fn reachable_from_start(&self) -> usize {
+        let mut seen = vec![false; self.zone.len()];
+        seen[self.start] = true;
+        let mut queue = VecDeque::from([self.start]);
+        while let Some(c) = queue.pop_front() {
+            for m in self.links(c) {
+                if !seen[m] {
+                    seen[m] = true;
+                    queue.push_back(m);
+                }
+            }
+        }
+        seen.iter().filter(|&&s| s).count()
     }
 
     pub fn junctions(&self) -> usize {
