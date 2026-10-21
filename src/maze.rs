@@ -241,7 +241,7 @@ impl Maze {
         Some(route)
     }
 
-    pub fn reachable_from_start(&self) -> usize {
+    pub fn reachable_from_start(&self) -> Vec<bool> {
         let mut seen = vec![false; self.zone.len()];
         seen[self.start] = true;
         let mut queue = VecDeque::from([self.start]);
@@ -253,7 +253,7 @@ impl Maze {
                 }
             }
         }
-        seen.iter().filter(|&&s| s).count()
+        seen
     }
 
     pub fn junctions(&self) -> usize {

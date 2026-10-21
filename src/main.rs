@@ -316,7 +316,7 @@ fn build_book_sizes_and_print_stats(first: u64, last: u64) {
         let cells = rows * cols;
         let solid = (0..cells).filter(|&c| m.is_solid(c)).count();
         let dead_ends = (0..cells).filter(|&c| m.degree(c) == 1 && c != m.start && c != m.goal).count();
-        let cut_off = cells - solid - m.reachable_from_start();
+        let cut_off = cells - solid - m.reachable_from_start().iter().filter(|&&r| r).count();
         println!(
             "seed {seed} ({cols}x{rows}): {ms:>4.0} ms  score {:.2}  {} zones, {solid} solid, {dead_ends} dead ends, {cut_off} cut off, {} bridges",
             scores.total(),

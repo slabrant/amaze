@@ -4,48 +4,57 @@ use std::collections::BinaryHeap;
 use crate::maze::{walk_length, Maze};
 
 pub const MANY_FORKS: f64 = 0.25;
-pub const LEVELS_PER_CELL: f64 = 0.20;
-pub const LONG_SHORTEST_LOOPS: f64 = 0.17;
-pub const ZONE_CONTACT: f64 = 0.13;
-pub const LONGER_BRIDGES: f64 = 0.06;
+pub const LONG_SHORTEST_LOOPS: f64 = 0.16;
+pub const LEVELS_PER_CELL: f64 = 0.14;
+pub const ZONE_CONTACT: f64 = 0.11;
 pub const CHOKE_POINT_SPREAD: f64 = 0.10;
+pub const ZONE_CROSSINGS: f64 = 0.08;
+pub const LONGER_BRIDGES: f64 = 0.05;
 pub const ZONE_COUNT: f64 = 0.04;
 pub const WALKING_DISTANCE: f64 = 0.035;
+pub const ROUTE_REACH: f64 = 0.02;
 pub const CROW_FLIES_CLOSENESS: f64 = 0.015;
 
 pub const CELLS_PER_ZONE: f64 = 60.0;
 pub const LOOP_IN_BOARD_SPANS_FOR_FULL_MARKS: f64 = 1.0;
 pub const CONTACT_PER_CELL_FOR_FULL_MARKS: f64 = 1.0;
-pub const BRIDGE_CELLS_FOR_FULL_MARKS: f64 = 6.0;
+pub const ZONE_CROSSINGS_PER_CELL_FOR_FULL_MARKS: f64 = 0.1;
+pub const EXTRA_BRIDGE_CELLS_PER_CELL_FOR_FULL_MARKS: f64 = 0.05;
+pub const REACH_IN_BOARD_SPANS_FOR_NO_MARKS: f64 = 0.25;
 pub const WALK_IN_BOARD_SPANS_FOR_FULL_MARKS: f64 = 2.0;
 pub const STEP_BASELINE: f64 = 0.05;
 pub const LEANING_STRENGTH: f64 = 16.0;
+pub const STEP_LEANING: f64 = 8.0;
 pub const CHANCE_TO_BRANCH: f64 = 0.1;
 
 #[derive(Clone, Copy, Default)]
 pub struct Scores {
-    pub levels_per_cell: f64,
-    pub long_shortest_loops: f64,
     pub many_forks: f64,
+    pub long_shortest_loops: f64,
+    pub levels_per_cell: f64,
     pub zone_contact: f64,
-    pub longer_bridges: f64,
     pub choke_point_spread: f64,
+    pub zone_crossings: f64,
+    pub longer_bridges: f64,
     pub zone_count: f64,
     pub walking_distance: f64,
+    pub route_reach: f64,
     pub crow_flies_closeness: f64,
 }
 
 impl Scores {
-    pub fn weighted(&self) -> [(&'static str, f64, f64); 9] {
+    pub fn weighted(&self) -> [(&'static str, f64, f64); 11] {
         [
             ("many forks", MANY_FORKS, self.many_forks),
-            ("levels per cell", LEVELS_PER_CELL, self.levels_per_cell),
             ("long shortest loops", LONG_SHORTEST_LOOPS, self.long_shortest_loops),
+            ("levels per cell", LEVELS_PER_CELL, self.levels_per_cell),
             ("zone contact", ZONE_CONTACT, self.zone_contact),
-            ("longer bridges", LONGER_BRIDGES, self.longer_bridges),
             ("choke point spread", CHOKE_POINT_SPREAD, self.choke_point_spread),
+            ("zone crossings", ZONE_CROSSINGS, self.zone_crossings),
+            ("longer bridges", LONGER_BRIDGES, self.longer_bridges),
             ("zone count", ZONE_COUNT, self.zone_count),
             ("walking distance", WALKING_DISTANCE, self.walking_distance),
+            ("route reach", ROUTE_REACH, self.route_reach),
             ("crow-flies closeness", CROW_FLIES_CLOSENESS, self.crow_flies_closeness),
         ]
     }
@@ -61,8 +70,10 @@ impl Scores {
         self.zone_contact += other.zone_contact;
         self.longer_bridges += other.longer_bridges;
         self.choke_point_spread += other.choke_point_spread;
+        self.zone_crossings += other.zone_crossings;
         self.zone_count += other.zone_count;
         self.walking_distance += other.walking_distance;
+        self.route_reach += other.route_reach;
         self.crow_flies_closeness += other.crow_flies_closeness;
     }
 }
@@ -103,8 +114,24 @@ pub fn loop_score(m: &Maze, cells_round: usize) -> f64 {
     (cells_round as f64 / (LOOP_IN_BOARD_SPANS_FOR_FULL_MARKS * board_span(m))).min(1.0)
 }
 
-pub fn bridge_score(cells_passed_over: usize) -> f64 {
-    (cells_passed_over as f64 / BRIDGE_CELLS_FOR_FULL_MARKS).min(1.0)
+pub fn route_reach_score(m: &Maze, route: &[usize]) -> f64 {
+    let mut away = vec![usize::MAX; m.zone.len()];
+    let mut queue = std::collections::VecDeque::new();
+    for &c in route {
+        away[c] = 0;
+        queue.push_back(c);
+    }
+    while let Some(x) = queue.pop_front() {
+        for y in (0..4).filter_map(|d| m.step(x, d)) {
+            if away[y] == usize::MAX {
+                away[y] = away[x] + 1;
+                queue.push_back(y);
+            }
+        }
+    }
+    let maze_cells: Vec<usize> = (0..m.zone.len()).filter(|&c| !m.is_solid(c)).collect();
+    let mean = maze_cells.iter().map(|&c| away[c] as f64).sum::<f64>() / maze_cells.len().max(1) as f64;
+    (1.0 - mean / (REACH_IN_BOARD_SPANS_FOR_NO_MARKS * board_span(m))).max(0.0)
 }
 
 pub fn walking_score(m: &Maze, cells_walked: usize) -> f64 {
@@ -117,26 +144,30 @@ pub fn crow_flies_score(m: &Maze, a: usize, b: usize) -> f64 {
     1.0 - (dr * dr + dc * dc).sqrt() / diagonal
 }
 
+pub fn contact_per_cell(contact: &[usize], cells: &[usize]) -> f64 {
+    (0..cells.len()).filter(|&z| cells[z] > 0).map(|z| contact[z] as f64 / cells[z] as f64).fold(f64::MAX, f64::min)
+}
+
 pub fn score(m: &Maze) -> Scores {
     let n = m.zone.len();
     let maze_cells = (0..n).filter(|&c| !m.is_solid(c)).count().max(1);
     let levels: usize = (0..n).map(|c| if m.is_solid(c) { 0 } else if m.bridges_overhead[c] != 0 { 2 } else { 1 }).sum();
     let forks = (0..n).filter(|&c| m.degree(c) >= 3).count();
-    let route_walked = m.solve().map_or(0, |route| walk_length(&route, m.cols));
-    let mean_bridge = if m.bridges.is_empty() {
-        0.0
-    } else {
-        m.bridges.iter().map(|b| bridge_score(b.spans.len())).sum::<f64>() / m.bridges.len() as f64
-    };
+    let route = m.solve().unwrap_or_default();
+    let zone_crossing_cells: usize = m.bridges.iter().map(|b| b.spans.iter().filter(|&&x| m.zone[x] != m.zone[b.top_or_left]).count()).sum();
+    let extra_bridge_cells: usize = m.bridges.iter().map(|b| b.spans.len() - 1).sum();
+    let per_maze_cell = |count: usize, full_marks: f64| (count as f64 / maze_cells as f64 / full_marks).min(1.0);
     Scores {
         levels_per_cell: levels as f64 / (2 * n) as f64,
         long_shortest_loops: mean_shortest_loop_score(m),
         many_forks: forks as f64 / maze_cells as f64,
         zone_contact: (weakest_zone_contact(m) / CONTACT_PER_CELL_FOR_FULL_MARKS).min(1.0),
-        longer_bridges: mean_bridge,
+        longer_bridges: per_maze_cell(extra_bridge_cells, EXTRA_BRIDGE_CELLS_PER_CELL_FOR_FULL_MARKS),
         choke_point_spread: choke_point_spread_score(m, &m.zone_crossings),
+        zone_crossings: per_maze_cell(zone_crossing_cells, ZONE_CROSSINGS_PER_CELL_FOR_FULL_MARKS),
         zone_count: zone_count_score(m.rows, m.cols, m.zone_count),
-        walking_distance: walking_score(m, route_walked),
+        walking_distance: walking_score(m, walk_length(&route, m.cols)),
+        route_reach: route_reach_score(m, &route),
         crow_flies_closeness: crow_flies_score(m, m.start, m.goal),
     }
 }
@@ -203,5 +234,5 @@ fn weakest_zone_contact(m: &Maze) -> f64 {
             }
         }
     }
-    (0..m.zone_count).filter(|&z| cells[z] > 0).map(|z| contact[z] as f64 / cells[z] as f64).fold(f64::MAX, f64::min)
+    contact_per_cell(&contact, &cells)
 }
