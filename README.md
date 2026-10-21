@@ -57,15 +57,17 @@ cargo build --release
 
 Each maze shows a four-character code (no look-alike letters: no I, L, O, 0
 or 1). Give it back with `--seed`, and the same size or `--level`, to make
-that maze again. Levels are `easy`, `medium`, `hard`, and `mini-trivial`,
-`mini-easy`, `mini-medium`, `mini-hard`: the sizes used in the book.
+that maze again. Levels are `trivial`, `easy`, `medium`, `hard`, and
+`mini-trivial`, `mini-easy`, `mini-medium`, `mini-hard`: the sizes used in
+the book.
 
 `amaze book -o book.pdf` makes a whole book for double-sided printing: three
-each of Easy, Medium and Hard, then eight minis four to a page (two each of
-Trivial, Easy, Medium and Hard, a level to a row), every page with its solutions on the back.
-Each level's route runs roughly two to three times the last (minis about 1.6
-times). Every maze shows its code; the book's own code is printed in the
-terminal, and `--seed` with it makes the same book again.
+each of Trivial, Easy, Medium and Hard, then twelve minis four to a page
+(three each of the same levels, in turn), every page with its solutions on
+the back. Each level is about 1.4 times as wide as the last, and each mini's
+cells print the same size as its full-size twin's: a mini is one corner of
+its twin, so to speak. Every maze shows its code; the book's own code is
+printed in the terminal, and `--seed` with it makes the same book again.
 
 `--sign NAME` (on either command) prints NAME once on each front page, in the
 caption line under the maze (the bottom-left one, four to a page).

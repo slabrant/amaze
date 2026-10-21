@@ -30,7 +30,7 @@ Generate printable mazes with bridges that weave over and under.
 
 usage: amaze [options]
        amaze book [-o PATH] [--seed CODE] [--sign NAME]
-                                              a book of mazes, Easy to Hard,
+                                              a book of mazes, Trivial to Hard,
                                               then minis, solutions on the backs
        amaze check [FIRST_SEED] [LAST_SEED]   build mazes and check every rule
 
@@ -43,8 +43,9 @@ options:
                       bigger mazes)
   --count N           number of mazes (default 1)
   --per-page 1|4      mazes per page: 1, or 4 small ones in a 2x2 grid
-  --level NAME        size by level: easy, medium, hard, mini-trivial,
-                      mini-easy, mini-medium or mini-hard (as in the book)
+  --level NAME        size by level: trivial, easy, medium, hard,
+                      mini-trivial, mini-easy, mini-medium or mini-hard
+                      (as in the book)
   --seed CODE         recreate a maze from the code printed beside it
   --solution          add solutions, all at the back
   --back-solution     put each page's solutions on the back of its sheet:
@@ -219,27 +220,28 @@ fn run(a: Args) -> Result<(), String> {
 /// (label, cols, rows)), in page order.
 type Section = (&'static str, usize, Vec<(String, usize, usize)>);
 
-/// Levels: (name for --level, label, cols, rows). Sizes measured so each
-/// full-page level's route runs two to three times the last, and each mini
-/// level's about 1.6 times.
-const LEVELS: [(&str, &str, usize, usize); 7] = [
-    ("easy", "Easy", 24, 30),
-    ("medium", "Medium", 44, 55),
-    ("hard", "Hard", 70, 88),
-    ("mini-trivial", "Mini Trivial", 10, 12),
-    ("mini-easy", "Mini Easy", 14, 17),
-    ("mini-medium", "Mini Medium", 20, 24),
-    ("mini-hard", "Mini Hard", 27, 33),
+/// Levels: (name for --level, label, cols, rows). Each level is about 1.4
+/// times as wide as the last (its route about 1.6 times as long), and each
+/// mini is sized so its cells print the same size as its full-size twin's.
+const LEVELS: [(&str, &str, usize, usize); 8] = [
+    ("trivial", "Trivial", 21, 27),
+    ("easy", "Easy", 29, 37),
+    ("medium", "Medium", 40, 52),
+    ("hard", "Hard", 56, 73),
+    ("mini-trivial", "Mini Trivial", 10, 13),
+    ("mini-easy", "Mini Easy", 14, 18),
+    ("mini-medium", "Mini Medium", 19, 24),
+    ("mini-hard", "Mini Hard", 27, 35),
 ];
 /// Where the minis start in LEVELS.
-const MINIS: usize = 3;
+const MINIS: usize = 4;
 
 fn book_sections() -> Vec<Section> {
     let full = |&(_, label, cols, rows): &(&str, &'static str, usize, usize)| -> Section {
         (label, 1, vec![(label.to_string(), cols, rows); 3])
     };
-    // Minis, two of each level side by side, a level to a row.
-    let minis = LEVELS[MINIS..].iter().flat_map(|&(_, label, cols, rows)| vec![(label.to_string(), cols, rows); 2]).collect();
+    // Minis, three of each level in turn, four to a page.
+    let minis = LEVELS[MINIS..].iter().flat_map(|&(_, label, cols, rows)| vec![(label.to_string(), cols, rows); 3]).collect();
     let mut out: Vec<Section> = LEVELS[..MINIS].iter().map(full).collect();
     out.push(("Minis", 4, minis));
     out
