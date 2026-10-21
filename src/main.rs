@@ -8,6 +8,7 @@ mod route;
 mod rules;
 mod seed_code;
 mod seeded_rng;
+mod shape_census;
 mod weave;
 mod zone_growth;
 
@@ -321,6 +322,7 @@ fn run_book(argv: &[String]) -> Result<(), String> {
 fn build_book_sizes_and_check_every_rule(first: u64, last: u64) -> bool {
     let mut failed = 0;
     let mut all = loop_census::LoopCensus::default();
+    let mut all_shapes = shape_census::ShapeCensus::default();
     for seed in first..last {
         let l = &levels::LEVELS[seed as usize % levels::LEVELS.len()];
         let (cols, rows) = (l.cols, l.rows);
@@ -341,6 +343,7 @@ fn build_book_sizes_and_check_every_rule(first: u64, last: u64) -> bool {
         let s = &m.stats;
         let census = loop_census::count_loops(&m);
         all.add(&census);
+        all_shapes.add(&shape_census::count_shapes(&m));
         if broken.is_empty() {
             println!(
                 "{what}: ok  {:>3.0} ms  {} strand crossings, {} hops, {} rings, {} junctions, loops {} ({} around, {} across), layouts tried {}",
@@ -370,6 +373,12 @@ fn build_book_sizes_and_check_every_rule(first: u64, last: u64) -> bool {
         pct(all.around, all.loops),
         pct(all.wrapping - all.around, all.loops),
         pct(all.wrapping_links, all.links)
+    );
+    println!(
+        "per 100 path cells: C bends {:.1}, S bends {:.1}, junctions {:.1}",
+        all_shapes.per_hundred_cells(all_shapes.c_bends),
+        all_shapes.per_hundred_cells(all_shapes.s_bends),
+        all_shapes.per_hundred_cells(all_shapes.junctions)
     );
     failed == 0
 }
