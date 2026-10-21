@@ -1,21 +1,25 @@
-//! A minimal PDF writer: letter pages of lines, rectangles, curves and
-//! Helvetica text, which is all a maze needs.
-
 use std::fmt::Write as _;
 use std::io::{self, Write};
 
 pub const PAGE_W: f64 = 8.5 * 72.0;
 pub const PAGE_H: f64 = 11.0 * 72.0;
 
-/// Drawing commands for one page, in points from the top-left corner.
 pub struct Canvas {
     buf: String,
 }
 
+pub enum LineCap {
+    Round,
+    Square,
+}
+
+fn points_from_top_left_with_y_running_down() -> String {
+    format!("1 0 0 -1 0 {PAGE_H} cm\n")
+}
+
 impl Canvas {
     pub fn new() -> Canvas {
-        // Flip the page so y runs down, as on screen.
-        Canvas { buf: format!("1 0 0 -1 0 {PAGE_H} cm\n") }
+        Canvas { buf: points_from_top_left_with_y_running_down() }
     }
 
     fn nums(&mut self, vals: &[f64], op: &str) {
@@ -36,12 +40,14 @@ impl Canvas {
     pub fn width(&mut self, w: f64) {
         self.nums(&[w], "w");
     }
-    /// 0 butt, 1 round, 2 square.
-    pub fn cap(&mut self, k: u8) {
-        let _ = writeln!(self.buf, "{k} J");
+    pub fn cap(&mut self, cap: LineCap) {
+        let code = match cap {
+            LineCap::Round => 1,
+            LineCap::Square => 2,
+        };
+        let _ = writeln!(self.buf, "{code} J");
     }
-    /// Mirror everything drawn after this left to right across the page.
-    pub fn mirror(&mut self) {
+    pub fn mirror_left_to_right_from_here_on(&mut self) {
         let _ = writeln!(self.buf, "-1 0 0 1 {PAGE_W} 0 cm");
     }
     pub fn dash(&mut self, pattern: &[f64]) {
@@ -94,15 +100,14 @@ impl Canvas {
     pub fn restore(&mut self) {
         self.buf.push_str("Q\n");
     }
-    /// Text with its baseline starting at (x, y).
-    pub fn text(&mut self, x: f64, y: f64, size: f64, s: &str) {
+    pub fn text(&mut self, baseline_start_x: f64, baseline_y: f64, size: f64, s: &str) {
+        let (x, y) = (baseline_start_x, baseline_y);
         let esc = s.replace('\\', "\\\\").replace('(', "\\(").replace(')', "\\)");
         let _ = writeln!(self.buf, "BT /F1 1 Tf {size} 0 0 {} {x:.2} {y:.2} Tm ({esc}) Tj ET", -size);
     }
 }
 
-/// Width of a string in Helvetica, in points.
-pub fn text_width(s: &str, size: f64) -> f64 {
+pub fn helvetica_width_in_points(s: &str, size: f64) -> f64 {
     let units: u32 = s
         .chars()
         .map(|ch| match ch {
