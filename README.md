@@ -19,21 +19,30 @@ Printable mazes with bridges that weave over and under each other.
 Generation never repairs or relaxes anything after the fact:
 
 1. **Strands.** Zones grow as strands three cells thick from seeds spread
-   across the map, snaking from their newest end. A strand blocked by another
-   can cross over it on a bridge, or slip under it while the other strand
-   bridges over: that over-and-under is what winds strands round each other.
-   Every growth step must keep each zone it touches in one piece, with at
-   least two walls each cell may open and no 2x2 square that could only ever
-   loop round a lone pillar of wall. Steps that would break that are not
-   taken.
-2. **Carving.** Each zone is carved with a growing tree that branches often
-   and prefers turns to straight runs. A corridor boxed in by others hops
-   over a passage on a new bridge if its zone carries on beyond.
+   across the map, branching from anywhere along themselves and now and then
+   snaking from their newest end. A strand blocked by another would much
+   rather cross over it on a bridge, or slip under it while the other strand
+   bridges over, than step aside, and a strand that comes back beside itself
+   round another closes a ring. That over-and-under is what winds strands
+   round each other, and it is what the loops in step 2 wind round. Every
+   growth step must keep each zone it touches in one piece, with at least two
+   walls each cell may open and no 2x2 square that could only ever loop round
+   a lone pillar of wall. Steps that would break that are not taken.
+2. **Carving.** Each zone is carved in ears: a corridor sets out from what is
+   already carved, through new ground, and keeps going until it can join up
+   again in a loop that winds round or across another zone (over or under
+   its passages, or with its ground inside the loop). Only when it is boxed
+   in does it settle for less: first a detour, joining back beside where it
+   set out so the corridor it left simply runs through the new ground,
+   making no loop at all; then the longest loop it can close. It never cuts
+   off a lone cell, never closes a loop round a lone pillar, and backs up to
+   try another way when boxed in with nowhere to go. So no corridor is ever
+   a dead end, and nothing is closed up after the fact. Zones take turns, so
+   a corridor can hop over another zone's finished passage on a new bridge.
 3. **Route.** The one way across between each zone and the next, and the
    start and finish, are chosen so each zone's stretch of the route is long.
-4. **Loops.** Every other dead end opens one more wall (or hops a bridge) back
-   into its own zone. The promise from step 1 means one is always free. Any
-   loop of four cells then gets a wall back.
+   The start and finish are made by putting one wall back on a loop, so they
+   are the only two dead ends.
 
 Bridges are never counted toward a target: a bridge is there because a strand
 had to cross another or a corridor had to hop over one.
