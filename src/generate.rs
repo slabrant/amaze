@@ -100,8 +100,16 @@ impl Maze {
         let mut m = Maze::empty(rows, cols, zones.min(route.len()));
         let mut pieces = Pieces { of: vec![NOT_IN_A_PIECE; m.zone.len()], cells: Vec::new() };
         m.lay_route_in_uneven_stretches(&route, rng);
-        m.grow_zones_toward_each_other(&route, &mut pieces, rng);
-        m.move_cells_with_one_neighbour_in_their_zone(&route, &pieces);
+        let mut jumps = m.grow_zones_toward_each_other(&route, &mut pieces, rng);
+        loop {
+            m.move_cells_with_one_neighbour_in_their_zone(&route, &pieces);
+            let before = jumps.len();
+            m.undo_jumps_that_would_leave_a_dead_end(&mut jumps);
+            pieces = m.pieces_of(&jumps);
+            if jumps.len() == before {
+                break;
+            }
+        }
         let mut in_tree = vec![false; m.zone.len()];
         for &c in &route {
             in_tree[c] = true;
@@ -368,7 +376,7 @@ impl Maze {
                 return None;
             }
             let has_another_of_its_zone_beside =
-                |s: usize| (0..4).filter_map(|e| self.step(s, e)).any(|q| q != c && self.zone[q] == w && !self.under_a_bridge(q) && !pieces.holds(q));
+                |s: usize| (0..4).filter_map(|e| self.step(s, e)).any(|q| q != c && (self.zone[q] == w || self.zone[q] == NO_ZONE) && !self.under_a_bridge(q) && !pieces.holds(q));
             let side = |p: usize| {
                 self.step(c, p).filter(|&s| {
                     (self.zone[s] == NO_ZONE || self.zone[s] == w)
@@ -405,21 +413,84 @@ impl Maze {
         }
     }
 
-    fn grow_zones_toward_each_other(&mut self, route: &[usize], pieces: &mut Pieces, rng: &mut Rng) {
+    fn pieces_of(&self, jumps: &[Jump]) -> Pieces {
+        let mut pieces = Pieces { of: vec![NOT_IN_A_PIECE; self.zone.len()], cells: Vec::new() };
+        for j in jumps {
+            for (&c, &[s0, s1]) in j.under.iter().zip(&j.sides) {
+                pieces.add(vec![s0, c, s1]);
+            }
+            if !pieces.holds(j.from) {
+                pieces.add(vec![j.from, j.to]);
+            } else {
+                let p = pieces.of[j.from];
+                pieces.of[j.to] = p;
+                pieces.cells[p].push(j.to);
+            }
+        }
+        pieces
+    }
+
+    fn undo_jumps_that_would_leave_a_dead_end(&mut self, jumps: &mut Vec<Jump>) {
+        let has_another_of_its_zone_beside =
+            |m: &Maze, s: usize| (0..4).filter_map(|d| m.step(s, d)).any(|q| m.zone[q] == m.zone[s] && !m.under_a_bridge(q));
+        let mut i = 0;
+        while i < jumps.len() {
+            let j = &jumps[i];
+            let usable = j.sides.iter().flatten().chain([&j.to]).all(|&s| has_another_of_its_zone_beside(self, s));
+            if usable {
+                i += 1;
+                continue;
+            }
+            let j = jumps.swap_remove(i);
+            for (&c, &[s0, s1]) in j.under.iter().zip(&j.sides) {
+                self.close_wall(c, self.direction_toward(c, s0));
+                self.close_wall(c, self.direction_toward(c, s1));
+            }
+            self.remove_link(j.from, j.to);
+        }
+    }
+
+    fn jump_ends_waiting_for_a_partner(&self, jumps: &[Jump]) -> Vec<(usize, Vec<usize>, f64)> {
+        let mut waiting = Vec::new();
+        for j in jumps {
+            let value = bridge_value(j.under.len(), j.under.len());
+            for &end in j.sides.iter().flatten().chain([&j.to]) {
+                let beside: Vec<usize> = (0..4).filter_map(|d| self.step(end, d)).filter(|&q| !self.under_a_bridge(q)).collect();
+                if beside.iter().any(|&q| self.zone[q] == self.zone[end]) {
+                    continue;
+                }
+                let partners = beside.into_iter().filter(|&q| self.zone[q] == NO_ZONE).collect();
+                waiting.push((end, partners, value));
+            }
+        }
+        waiting
+    }
+
+    fn grow_zones_toward_each_other(&mut self, route: &[usize], pieces: &mut Pieces, rng: &mut Rng) -> Vec<Jump> {
         let n = self.zone.len() as f64;
+        let mut taken = Vec::new();
         loop {
             let counts = self.zone_contact_counts();
             let weakest = contact_per_cell(&counts.0, &counts.1);
             let mut claims: Vec<(usize, u8)> = Vec::new();
             let mut jumps: Vec<Jump> = Vec::new();
             let mut values: Vec<f64> = Vec::new();
+            let waiting = self.jump_ends_waiting_for_a_partner(&taken);
             for y in (0..self.zone.len()).filter(|&y| self.zone[y] == NO_ZONE) {
                 let mut beside: Vec<u8> = (0..4).filter_map(|d| self.step(y, d)).map(|x| self.zone[x]).filter(|&z| z != NO_ZONE).collect();
                 beside.sort();
                 beside.dedup();
                 for z in beside {
+                    let mut value = goals::ZONE_CONTACT * n * (self.contact_after(&counts, &[(y, z)], &[]) - weakest);
+                    for &(end, ref partners, jump_value) in waiting.iter().filter(|(_, partners, _)| partners.contains(&y)) {
+                        if self.zone[end] == z {
+                            value += jump_value;
+                        } else if partners.len() == 1 {
+                            value -= jump_value;
+                        }
+                    }
                     claims.push((y, z));
-                    values.push(goals::ZONE_CONTACT * n * (self.contact_after(&counts, &[(y, z)], &[]) - weakest));
+                    values.push(value);
                 }
             }
             for x in (0..self.zone.len()).filter(|&x| self.zone[x] != NO_ZONE && !self.under_a_bridge(x)) {
@@ -442,7 +513,7 @@ impl Maze {
                 }
             }
             if values.is_empty() {
-                return;
+                return taken;
             }
             let i = rng.index_by_weight(&step_leaning(&values));
             if i < claims.len() {
@@ -451,6 +522,7 @@ impl Maze {
             } else {
                 let j = jumps.swap_remove(i - claims.len());
                 self.take_jump(&j, pieces);
+                taken.push(j);
             }
         }
     }

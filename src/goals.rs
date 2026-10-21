@@ -3,16 +3,16 @@ use std::collections::BinaryHeap;
 
 use crate::maze::{walk_length, Maze};
 
-pub const MANY_FORKS: f64 = 0.25;
-pub const LONG_SHORTEST_LOOPS: f64 = 0.16;
-pub const LEVELS_PER_CELL: f64 = 0.14;
-pub const ZONE_CONTACT: f64 = 0.11;
-pub const CHOKE_POINT_SPREAD: f64 = 0.10;
-pub const ZONE_CROSSINGS: f64 = 0.08;
-pub const LONGER_BRIDGES: f64 = 0.05;
+pub const MANY_FORKS: f64 = 0.22;
+pub const LONG_SHORTEST_LOOPS: f64 = 0.14;
+pub const LEVELS_PER_CELL: f64 = 0.10;
+pub const ZONE_CONTACT: f64 = 0.10;
+pub const CHOKE_POINT_SPREAD: f64 = 0.09;
+pub const ZONE_CROSSINGS: f64 = 0.18;
+pub const LONGER_BRIDGES: f64 = 0.04;
 pub const ZONE_COUNT: f64 = 0.04;
 pub const WALKING_DISTANCE: f64 = 0.035;
-pub const ROUTE_REACH: f64 = 0.02;
+pub const ROUTE_REACH: f64 = 0.04;
 pub const CROW_FLIES_CLOSENESS: f64 = 0.015;
 
 pub const CELLS_PER_ZONE: f64 = 60.0;
@@ -24,7 +24,7 @@ pub const REACH_IN_BOARD_SPANS_FOR_NO_MARKS: f64 = 0.25;
 pub const WALK_IN_BOARD_SPANS_FOR_FULL_MARKS: f64 = 2.0;
 pub const STEP_BASELINE: f64 = 0.05;
 pub const LEANING_STRENGTH: f64 = 16.0;
-pub const STEP_LEANING: f64 = 8.0;
+pub const STEP_LEANING: f64 = 4.0;
 pub const CHANCE_TO_BRANCH: f64 = 0.1;
 
 #[derive(Clone, Copy, Default)]
