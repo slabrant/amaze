@@ -258,7 +258,7 @@ const LEVELS: [Level; 8] = [
 const MINIS: usize = 4;
 
 fn book_sections() -> Vec<Section> {
-    let full = |l: &'static Level| -> Section { (l.label, 1, vec![l; 3]) };
+    let full = |l: &'static Level| -> Section { (l.label, 1, vec![l; 2]) };
     // Minis, three of each level in turn, four to a page.
     let minis = LEVELS[MINIS..].iter().flat_map(|l| vec![l; 3]).collect();
     let mut out: Vec<Section> = LEVELS[..MINIS].iter().map(full).collect();
