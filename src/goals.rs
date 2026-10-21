@@ -18,6 +18,7 @@ pub const CONTACT_PER_CELL_FOR_FULL_MARKS: f64 = 1.0;
 pub const BRIDGE_CELLS_FOR_FULL_MARKS: f64 = 6.0;
 pub const WALK_IN_BOARD_SPANS_FOR_FULL_MARKS: f64 = 2.0;
 pub const STEP_BASELINE: f64 = 0.05;
+pub const LEANING_STRENGTH: f64 = 4.0;
 
 #[derive(Clone, Copy, Default)]
 pub struct Scores {

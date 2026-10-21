@@ -16,13 +16,17 @@ struct WayOut {
     way: Way,
 }
 
+fn leaning(pulls: &[f64]) -> Vec<f64> {
+    pulls.iter().map(|p| p.powf(goals::LEANING_STRENGTH)).collect()
+}
+
 impl Maze {
     pub fn generate(rows: usize, cols: usize, rng: &mut Rng) -> Maze {
         let target = goals::target_zone_count(rows, cols);
         let zone_counts: Vec<usize> = (target.saturating_sub(1).max(1)..=target + 1).collect();
         let pulls: Vec<f64> =
             zone_counts.iter().map(|&z| STEP_BASELINE + goals::ZONE_COUNT * goals::zone_count_score(rows, cols, z)).collect();
-        let zones = zone_counts[rng.index_by_weight(&pulls)];
+        let zones = zone_counts[rng.index_by_weight(&leaning(&pulls))];
         let route = Maze::empty(rows, cols, 1).route_through_a_plain_tree(rng);
         let mut m = Maze::empty(rows, cols, zones.min(route.len()));
         m.lay_route_in_uneven_stretches(&route, rng);
@@ -32,7 +36,12 @@ impl Maze {
         for &c in &route {
             in_tree[c] = true;
         }
-        m.grow_tree(&mut in_tree, route.clone(), true, rng);
+        let mut zone_order: Vec<u8> = (0..m.zone_count as u8).collect();
+        rng.shuffle(&mut zone_order);
+        for z in zone_order {
+            let growing = route.iter().copied().filter(|&c| m.zone[c] == z).collect();
+            m.grow_tree(&mut in_tree, growing, true, rng);
+        }
         m.choose_start_and_finish_among_dead_ends();
         m.join_or_fill_in_every_dead_end(rng);
         m
@@ -126,7 +135,7 @@ impl Maze {
                 options.retain(|&(c, _)| c == newest);
             }
             let pulls: Vec<f64> = options.iter().map(|&(c, w)| self.pull_to_grow(c, w)).collect();
-            let (c, w) = options[rng.index_by_weight(&pulls)];
+            let (c, w) = options[rng.index_by_weight(&leaning(&pulls))];
             self.take(c, w);
             in_tree[w.to] = true;
             growing.push(w.to);
@@ -205,8 +214,12 @@ impl Maze {
     }
 
     fn grow_zones_toward_each_other(&mut self, rng: &mut Rng) {
+        let mut newest: Vec<Option<usize>> = vec![None; self.zone_count];
+        let mut size = vec![0usize; self.zone_count];
+        for c in (0..self.zone.len()).filter(|&c| self.zone[c] != NO_ZONE) {
+            size[self.zone[c] as usize] += 1;
+        }
         loop {
-            let contact = self.zone_contact_per_cell();
             let mut by_zone: Vec<Vec<(usize, usize)>> = vec![Vec::new(); self.zone_count];
             for y in (0..self.zone.len()).filter(|&y| self.zone[y] == NO_ZONE) {
                 let beside: Vec<u8> = (0..4).filter_map(|d| self.step(y, d)).map(|x| self.zone[x]).filter(|&z| z != NO_ZONE).collect();
@@ -217,16 +230,21 @@ impl Maze {
                     }
                 }
             }
-            let growable: Vec<usize> = (0..self.zone_count).filter(|&z| !by_zone[z].is_empty()).collect();
-            if growable.is_empty() {
+            let Some(smallest) = (0..self.zone_count).filter(|&z| !by_zone[z].is_empty()).min_by_key(|&z| size[z]) else {
                 return;
+            };
+            let mut options = by_zone[smallest].clone();
+            if let Some(tip) = newest[smallest] {
+                let beside_tip: Vec<usize> = (0..4).filter_map(|d| self.step(tip, d)).collect();
+                if options.iter().any(|(y, _)| beside_tip.contains(y)) {
+                    options.retain(|(y, _)| beside_tip.contains(y));
+                }
             }
-            let weakest = *growable.iter().min_by_key(|&&z| self.zone.iter().filter(|&&x| x as usize == z).count()).unwrap();
-            let _ = &contact;
-            let options = &by_zone[weakest];
             let pulls: Vec<f64> = options.iter().map(|&(_, touches)| STEP_BASELINE + goals::ZONE_CONTACT * touches as f64).collect();
-            let (y, _) = options[rng.index_by_weight(&pulls)];
-            self.zone[y] = weakest as u8;
+            let (y, _) = options[rng.index_by_weight(&leaning(&pulls))];
+            self.zone[y] = smallest as u8;
+            size[smallest] += 1;
+            newest[smallest] = Some(y);
         }
     }
 
@@ -268,7 +286,7 @@ impl Maze {
             }
             let walking_from_here = self.walking_distances_from(c);
             let pulls: Vec<f64> = ways.iter().map(|&w| self.pull_to_join(c, w, &walking_from_here)).collect();
-            let w = ways[rng.index_by_weight(&pulls)];
+            let w = ways[rng.index_by_weight(&leaning(&pulls))];
             self.take(c, w);
         }
     }
