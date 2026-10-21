@@ -82,12 +82,12 @@ pub struct Bridge {
 
 // Zone layout.
 const ZONE_BLOCK: usize = 3; // strands are built from blocks this many cells wide
-const ZONE_SNAKE: f64 = 0.85; // how often a zone grows from its newest block
-const CROSS_WEIGHT: f64 = 3.0; // pull toward crossing over another strand
-const UNDER_WEIGHT: f64 = 3.0; // pull toward slipping under another strand
-const CROSS_BLOCKS: usize = 2; // most blocks one strand crossing may span
-const RING_WEIGHT: f64 = 6.0; // pull toward closing a ring round another strand
-const RING_BLOCKS: usize = 6; // fewest blocks round a ring
+const ZONE_SNAKE: f64 = 0.2; // how often a zone grows from its newest block
+const CROSS_WEIGHT: f64 = 20.0; // pull toward crossing over another strand (a step: 1)
+const UNDER_WEIGHT: f64 = 20.0; // pull toward slipping under another strand
+const CROSS_BLOCKS: usize = 3; // most blocks one strand crossing may span
+const RING_WEIGHT: f64 = 40.0; // pull toward closing a ring round another strand
+const RING_BLOCKS: usize = 4; // fewest blocks round a ring
 const ZONE_WIGGLE: usize = 3; // edge-wiggling passes (times the cell count)
 const ZONE_FLOOR: f64 = 0.8; // wiggling never shrinks a zone below this share
 
@@ -469,10 +469,12 @@ impl Maze {
 
     /// Grow the zones as strands of blocks, from seeds spread across the
     /// map. Each zone in turn adds a block touching exactly one of its own,
-    /// so it stays a thin strand, mostly from its newest block, so it snakes
-    /// along. Where another strand is in the way it may cross over it on a
-    /// bridge, or slip under it while the other strand bridges over: strands
-    /// coil over and under each other like spaghetti.
+    /// so it stays a thin strand, now and then from its newest block so it
+    /// snakes along, more often from anywhere along it so it branches. Where
+    /// another strand is in the way it would much rather cross over it on a
+    /// bridge, or slip under it while the other strand bridges over, than
+    /// step aside: strands coil over and under each other like spaghetti. A
+    /// strand that comes back beside itself round another closes a ring.
     fn make_zones(&mut self, rng: &mut Rng) -> bool {
         let n = self.n_zones;
         let rows = spans(self.rows);
@@ -598,9 +600,7 @@ impl Maze {
                     if lay.own_adjacent(t, z) != 1 {
                         continue;
                     }
-                    // Head for open ground, so strands don't box themselves in.
-                    let free = (0..4).filter_map(|e| lay.step(t, e)).filter(|&x| lay.owner[x] == NONE).count();
-                    out.push((Grow::Step(t), 0.5 + free as f64));
+                    out.push((Grow::Step(t), 1.0));
                     // Between two blocks of one other strand: slip under it.
                     let side = if d >= 2 { 0 } else { 2 };
                     if let (Some(f1), Some(f2)) = (lay.step(t, side), lay.step(t, side + 1)) {
