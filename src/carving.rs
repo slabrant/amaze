@@ -5,7 +5,6 @@ use crate::seeded_rng::Rng;
 
 const PULL_TO_TURN: f64 = 1.0;
 const PULL_TO_CARRY_STRAIGHT_ON: f64 = 0.3;
-const PULL_TOWARD_CELLS_WITH_FEWER_WAYS_ON: f64 = 1.0;
 const MOST_CELLS_A_HOP_PASSES_OVER: usize = 3;
 const WALKS_AT_AN_EAR_BEFORE_REDRAWING_LAYOUT: usize = 30;
 const WALKS_HOLDING_OUT_FOR_A_LOOP_WORTH_HAVING: usize = WALKS_AT_AN_EAR_BEFORE_REDRAWING_LAYOUT / 2;
@@ -111,26 +110,32 @@ impl Maze {
                 break;
             }
             let zone = rng.pick(&live);
-            let mut walks = 0;
-            let new_cells = loop {
-                let saved = (self.clone(), state.clone(), entered_by.clone());
-                let may_settle = walks >= WALKS_HOLDING_OUT_FOR_A_LOOP_WORTH_HAVING;
-                let ear = self.walk_ear(zone as u8, &may_set_out_from[zone], may_settle, &mut state, &mut entered_by, rng);
-                if let Some(cells) = ear {
-                    if !self.walls_in_a_lone_uncarved_cell(zone as u8, &state) {
-                        break cells;
-                    }
-                }
-                (*self, state, entered_by) = saved;
-                walks += 1;
-                if walks == WALKS_AT_AN_EAR_BEFORE_REDRAWING_LAYOUT {
-                    return false;
-                }
+            let Some(new_cells) = self.carve_one_ear(zone as u8, &may_set_out_from[zone], &mut state, &mut entered_by, rng) else {
+                return false;
             };
             may_set_out_from[zone].retain(|&cell| state[cell] == Carving::Carved);
             may_set_out_from[zone].extend(new_cells);
         }
         state.iter().all(|&s| s == Carving::Carved)
+    }
+
+    fn carve_one_ear(
+        &mut self,
+        zone: u8,
+        starts: &[usize],
+        state: &mut Vec<Carving>,
+        entered_by: &mut Vec<Option<usize>>,
+        rng: &mut Rng,
+    ) -> Option<Vec<usize>> {
+        for walks in 0..WALKS_AT_AN_EAR_BEFORE_REDRAWING_LAYOUT {
+            let before_walking = (self.clone(), state.clone(), entered_by.clone());
+            let may_settle = walks >= WALKS_HOLDING_OUT_FOR_A_LOOP_WORTH_HAVING;
+            match self.walk_ear(zone, starts, may_settle, state, entered_by, rng) {
+                Some(cells) if !self.walls_in_a_lone_uncarved_cell(zone, state) => return Some(cells),
+                _ => (*self, *state, *entered_by) = before_walking,
+            }
+        }
+        None
     }
 
     fn walls_in_a_lone_uncarved_cell(&self, zone: u8, state: &[Carving]) -> bool {
@@ -202,8 +207,7 @@ impl Maze {
             match self.next_move(&mut walk, state, entered_by, rng) {
                 Next::Close(j) => return Some(self.close_ear(&walk, &j, state)),
                 Next::Detour(j) => {
-                    let rejoined = *j.round.last().unwrap();
-                    self.close_wall(walk.start, self.direction_toward(walk.start, rejoined));
+                    self.send_the_corridor_it_left_round_the_detour(&walk, &j);
                     return Some(self.close_ear(&walk, &j, state));
                 }
                 Next::BackUp => {
@@ -218,6 +222,12 @@ impl Maze {
                 }
             }
         }
+    }
+
+    fn send_the_corridor_it_left_round_the_detour(&mut self, walk: &EarWalk, detour: &LoopJoin) {
+        let rejoined = *detour.round.last().unwrap();
+        let wall_the_corridor_ran_through = self.direction_toward(walk.start, rejoined);
+        self.close_wall(walk.start, wall_the_corridor_ran_through);
     }
 
     fn next_move(&self, walk: &mut EarWalk, state: &[Carving], entered_by: &[Option<usize>], rng: &mut Rng) -> Next {
@@ -304,16 +314,16 @@ impl Maze {
     }
 
     fn choose_way_on(&self, walk: &EarWalk, ways: &[WayOn], state: &[Carving], entered_by: &[Option<usize>], rng: &mut Rng) -> WayOn {
-        let cur = walk.newest();
-        let pulls: Vec<f64> = ways
-            .iter()
-            .map(|w| {
-                let ways_on_from_there = self.ways_into_uncarved(w.cell, state, true).len();
-                let turn = if entered_by[cur] == Some(w.direction) { PULL_TO_CARRY_STRAIGHT_ON } else { PULL_TO_TURN };
-                turn / (1.0 + ways_on_from_there as f64).powf(PULL_TOWARD_CELLS_WITH_FEWER_WAYS_ON)
-            })
-            .collect();
+        let pulls: Vec<f64> = ways.iter().map(|&way| self.pull_toward(walk.newest(), way, state, entered_by)).collect();
         ways[rng.index_by_weight(&pulls)]
+    }
+
+    fn pull_toward(&self, cur: usize, way: WayOn, state: &[Carving], entered_by: &[Option<usize>]) -> f64 {
+        let carries_straight_on = entered_by[cur] == Some(way.direction);
+        let pull_so_corridors_twist = if carries_straight_on { PULL_TO_CARRY_STRAIGHT_ON } else { PULL_TO_TURN };
+        let ways_on_from_there = self.ways_into_uncarved(way.cell, state, true).len();
+        let room_left_round_there = 1.0 + ways_on_from_there as f64;
+        pull_so_corridors_twist / room_left_round_there
     }
 
     fn back_up(&mut self, walk: &mut EarWalk, state: &mut [Carving]) -> bool {
