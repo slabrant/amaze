@@ -13,7 +13,7 @@ const CAPTION_GREY: Colour = [0.45, 0.45, 0.45];
 const HIDDEN_EDGE_GREY: Colour = [0.6, 0.6, 0.6];
 const SOLID_GROUND_HATCHING: Colour = [0.7, 0.7, 0.7];
 const GRAPH_PAPER_BLUE: Colour = [0.72, 0.82, 0.93];
-const ZONE_TINTS: [Colour; 8] = [
+const ZONE_TINTS: [Colour; 16] = [
     [0.98, 0.8, 0.8],
     [0.78, 0.87, 0.98],
     [0.8, 0.95, 0.8],
@@ -22,6 +22,14 @@ const ZONE_TINTS: [Colour; 8] = [
     [0.75, 0.94, 0.94],
     [0.98, 0.84, 0.92],
     [0.88, 0.88, 0.8],
+    [0.99, 0.85, 0.72],
+    [0.72, 0.93, 0.82],
+    [0.82, 0.82, 0.99],
+    [0.88, 0.96, 0.7],
+    [0.95, 0.74, 0.82],
+    [0.82, 0.88, 0.92],
+    [0.93, 0.86, 0.78],
+    [0.8, 0.86, 0.7],
 ];
 
 const PATH_SHARE_OF_CELL: f64 = 0.75;
