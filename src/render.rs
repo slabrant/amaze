@@ -362,7 +362,7 @@ fn draw_ground(cv: &mut Canvas, grid: &Grid, graph_paper: bool, floor_colour: &d
         cv.stroke();
     }
 
-    for cell in 0..maze.zone.len() {
+    for cell in (0..maze.zone.len()).filter(|&cell| !maze.is_solid(cell)) {
         let (x, y) = grid.corner(cell);
         cv.colour(floor_colour(cell));
         if maze.bridges_overhead[cell] == 0 {
@@ -396,7 +396,7 @@ fn draw_path_edges(cv: &mut Canvas, grid: &Grid) {
     cv.colour(BLACK);
     cv.width(grid.wall_width);
     cv.cap(LineCap::Square);
-    for cell in 0..maze.zone.len() {
+    for cell in (0..maze.zone.len()).filter(|&cell| !maze.is_solid(cell)) {
         let (x, y) = grid.corner(cell);
         if let Some(bridge_overhead) = maze.overhead(cell) {
             match bridge_overhead {

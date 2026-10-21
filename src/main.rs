@@ -1,12 +1,11 @@
 mod generate;
+mod goals;
 mod levels;
-mod loop_census;
 mod maze;
 mod pdf;
 mod render;
 mod seed_code;
 mod seeded_rng;
-mod shape_census;
 
 use std::fs::File;
 use std::io::BufWriter;
@@ -14,7 +13,7 @@ use std::process::ExitCode;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use levels::Level;
-use maze::{walk_length, zones_by_area, Maze};
+use maze::{walk_length, Maze};
 use seeded_rng::Rng;
 
 const USAGE: &str = "\
@@ -30,9 +29,6 @@ options:
   -o, --out PATH      output PDF path (default maze.pdf)
   --cols N            maze width in cells (default: Standard's)
   --rows N            maze height in cells (default: Standard's)
-  --zones N           zones the maze is split into, each with exactly one way
-                      across to the next (default: picked at random, more on
-                      bigger mazes)
   --count N           number of mazes (default 1)
   --per-page 1|4      mazes per page: 1, or 4 small ones in a 2x2 grid
   --level NAME        size by level: trivial, easy, standard, hard,
@@ -53,7 +49,6 @@ struct Args {
     out: String,
     cols: Option<usize>,
     rows: Option<usize>,
-    zones: Option<usize>,
     count: usize,
     per_page: usize,
     seed: Option<u64>,
@@ -70,7 +65,6 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         out: "maze.pdf".into(),
         cols: None,
         rows: None,
-        zones: None,
         count: 1,
         per_page: 1,
         seed: None,
@@ -93,7 +87,6 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             "-o" | "--out" => a.out = value(flag)?,
             "--cols" => a.cols = Some(number(value(flag)?, flag)?),
             "--rows" => a.rows = Some(number(value(flag)?, flag)?),
-            "--zones" => a.zones = Some(number(value(flag)?, flag)?),
             "--count" => a.count = number(value(flag)?, flag)?,
             "--per-page" => {
                 a.per_page = number(value(flag)?, flag)?;
@@ -125,7 +118,6 @@ fn run(a: Args) -> Result<(), String> {
     let cols = a.cols.unwrap_or(sized_by.cols);
     let rows = a.rows.unwrap_or(sized_by.rows);
     let level = Some(sized_by).filter(|_| a.cols.is_none() && a.rows.is_none());
-    let zones_of_unresized_level = level.map(|l| l.zones);
     let mut seed = a.seed.unwrap_or_else(seed_from_clock);
     let mut mazes = Vec::new();
     for i in 0..a.count {
@@ -133,17 +125,14 @@ fn run(a: Args) -> Result<(), String> {
             seed = seed_code::next_seed_with_a_letter(seed);
         }
         let mut rng = Rng::new(seed);
-        let zones = a.zones.unwrap_or_else(|| match zones_of_unresized_level {
-            Some(range) => range.pick(&mut rng),
-            None => zones_by_area(rows, cols, &mut rng),
-        });
         let t = Instant::now();
-        let m = Maze::generate(rows, cols, zones, &mut rng);
+        let m = Maze::generate(rows, cols, &mut rng);
         let route = m.solve().ok_or_else(|| format!("seed {seed}: goal unreachable (bug)"))?;
         eprintln!(
-            "maze {}: code {}, {zones} zones, {} bridges, {} junctions, solution walks {} cells ({:.0} ms)",
+            "maze {}: code {}, {} zones, {} bridges, {} junctions, solution walks {} cells ({:.0} ms)",
             i + 1,
             seed_code::encode(seed),
+            m.zone_count,
             m.bridges.len(),
             m.junctions(),
             walk_length(&route, cols),
@@ -230,8 +219,7 @@ fn build_all_at_once(jobs: &[(&Level, u64)]) -> Result<Vec<(Maze, Vec<usize>)>, 
             .map(|&(l, seed)| {
                 scope.spawn(move || {
                     let mut rng = Rng::new(seed);
-                    let zones = l.zones.pick(&mut rng);
-                    let m = Maze::generate(l.rows, l.cols, zones, &mut rng);
+                    let m = Maze::generate(l.rows, l.cols, &mut rng);
                     let route = m.solve().ok_or_else(|| format!("seed {seed}: goal unreachable (bug)"))?;
                     Ok((m, route))
                 })
@@ -315,47 +303,33 @@ fn run_book(argv: &[String]) -> Result<(), String> {
 }
 
 fn build_book_sizes_and_print_stats(first: u64, last: u64) {
-    let mut all = loop_census::LoopCensus::default();
-    let mut all_shapes = shape_census::ShapeCensus::default();
+    let mut all = goals::Scores::default();
     for seed in first..last {
         let l = &levels::LEVELS[seed as usize % levels::LEVELS.len()];
         let (cols, rows) = (l.cols, l.rows);
         let mut rng = Rng::new(seed);
-        let zones = l.zones.pick(&mut rng);
-        let what = format!("seed {seed} ({cols}x{rows}, {zones} zones)");
         let t = Instant::now();
-        let m = Maze::generate(rows, cols, zones, &mut rng);
+        let m = Maze::generate(rows, cols, &mut rng);
         let ms = t.elapsed().as_secs_f64() * 1000.0;
-        let census = loop_census::count_loops(&m);
-        all.add(&census);
-        all_shapes.add(&shape_census::count_shapes(&m));
+        let scores = goals::score(&m);
+        all.add(&scores);
         let cells = rows * cols;
-        let cut_off = cells - m.reachable_from_start();
+        let solid = (0..cells).filter(|&c| m.is_solid(c)).count();
         let dead_ends = (0..cells).filter(|&c| m.degree(c) == 1 && c != m.start && c != m.goal).count();
+        let cut_off = cells - solid - m.reachable_from_start();
         println!(
-            "{what}: {:>3.0} ms  {cut_off} cells cut off, {dead_ends} dead ends, {} bridges, {} junctions, loops {} ({} around, {} across)",
-            ms,
+            "seed {seed} ({cols}x{rows}): {ms:>4.0} ms  score {:.2}  {} zones, {solid} solid, {dead_ends} dead ends, {cut_off} cut off, {} bridges",
+            scores.total(),
+            m.zone_count,
             m.bridges.len(),
-            m.junctions(),
-            census.loops,
-            census.around,
-            census.wrapping - census.around,
         );
     }
-    let pct = |a: usize, b: usize| 100.0 * a as f64 / b.max(1) as f64;
-    println!(
-        "loops: {}; around another zone {:.0}%, only across one {:.0}%; links whose shortest loop wraps {:.0}%",
-        all.loops,
-        pct(all.around, all.loops),
-        pct(all.wrapping - all.around, all.loops),
-        pct(all.wrapping_links, all.links)
-    );
-    println!(
-        "per 100 path cells: C bends {:.1}, S bends {:.1}, junctions {:.1}",
-        all_shapes.per_hundred_cells(all_shapes.c_bends),
-        all_shapes.per_hundred_cells(all_shapes.s_bends),
-        all_shapes.per_hundred_cells(all_shapes.junctions)
-    );
+    let mazes = (last - first).max(1) as f64;
+    println!("average over {} mazes:", last - first);
+    for (name, weight, score) in all.weighted() {
+        println!("  {name:<22} {:>3.0}%  score {:.2}  adds {:.3}", weight * 100.0, score / mazes, weight * score / mazes);
+    }
+    println!("  {:<22}        total {:.3}", "", all.total() / mazes);
 }
 
 fn main() -> ExitCode {

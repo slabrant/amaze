@@ -1,6 +1,5 @@
-use std::collections::VecDeque;
-
-use crate::seeded_rng::Rng;
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, VecDeque};
 
 pub const NORTH: usize = 0;
 pub const SOUTH: usize = 1;
@@ -114,6 +113,52 @@ impl Maze {
         self.open_walls[n] |= 1 << opposite(d);
     }
 
+    pub fn close_wall(&mut self, c: usize, d: usize) {
+        let n = self.step(c, d).unwrap();
+        self.open_walls[c] &= !(1 << d);
+        self.open_walls[n] &= !(1 << opposite(d));
+    }
+
+    pub fn is_solid(&self, c: usize) -> bool {
+        self.degree(c) == 0
+    }
+
+    pub fn cells_walked_between(&self, a: usize, b: usize) -> usize {
+        (a / self.cols).abs_diff(b / self.cols) + (a % self.cols).abs_diff(b % self.cols)
+    }
+
+    pub fn walking_distances_from(&self, source: usize) -> Vec<usize> {
+        let mut dist = vec![usize::MAX; self.zone.len()];
+        dist[source] = 0;
+        let mut heap = BinaryHeap::from([Reverse((0, source))]);
+        while let Some(Reverse((d, x))) = heap.pop() {
+            if d > dist[x] {
+                continue;
+            }
+            for y in self.links(x) {
+                let through_x = d + self.cells_walked_between(x, y);
+                if through_x < dist[y] {
+                    dist[y] = through_x;
+                    heap.push(Reverse((through_x, y)));
+                }
+            }
+        }
+        dist
+    }
+
+    pub fn remove_link(&mut self, a: usize, b: usize) {
+        if let Some(i) = self.bridges.iter().position(|br| (br.top_or_left, br.bottom_or_right) == (a.min(b), a.max(b))) {
+            let bridge = self.bridges.remove(i);
+            for &m in &bridge.spans {
+                self.bridges_overhead[m] &= !bridge.orientation.bit();
+            }
+            self.bridged_to[a].retain(|&x| x != b);
+            self.bridged_to[b].retain(|&x| x != a);
+        } else {
+            self.close_wall(a, self.direction_toward(a, b));
+        }
+    }
+
     pub fn degree(&self, c: usize) -> usize {
         self.open_walls[c].count_ones() as usize + self.bridged_to[c].len()
     }
@@ -221,14 +266,4 @@ pub fn walk_length(route: &[usize], cols: usize) -> usize {
         .windows(2)
         .map(|w| (w[0] / cols).abs_diff(w[1] / cols) + (w[0] % cols).abs_diff(w[1] % cols))
         .sum()
-}
-
-pub fn zones_by_area(rows: usize, cols: usize, rng: &mut Rng) -> usize {
-    let area = rows * cols;
-    let most = most_zones_that_fit(rows, cols);
-    rng.from_to_inclusive((2 + area / 1000).min(most), (3 + area / 500).min(most))
-}
-
-pub fn most_zones_that_fit(rows: usize, cols: usize) -> usize {
-    (rows * cols / 18).clamp(1, 64)
 }

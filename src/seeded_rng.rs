@@ -47,17 +47,21 @@ impl Xoshiro256StarStar {
         lo + self.below(hi - lo + 1)
     }
 
-    pub fn chance(&mut self, p: f64) -> bool {
-        self.from_zero_to_one() < p
-    }
-
-    pub fn pick<T: Copy>(&mut self, v: &[T]) -> T {
-        v[self.below(v.len())]
-    }
-
     pub fn shuffle<T>(&mut self, v: &mut [T]) {
         for i in (1..v.len()).rev() {
             v.swap(i, self.below(i + 1));
         }
+    }
+
+    pub fn index_by_weight(&mut self, weights: &[f64]) -> usize {
+        let total: f64 = weights.iter().sum();
+        let mut x = self.from_zero_to_one() * total;
+        for (i, &weight) in weights.iter().enumerate() {
+            if x < weight {
+                return i;
+            }
+            x -= weight;
+        }
+        weights.len() - 1
     }
 }
