@@ -1418,15 +1418,19 @@ impl Maze {
                 best = Some((total, cuts, (start, sw), (goal, gw)));
             }
         }
-        let Some((_, cuts, (start, sw), (goal, gw))) = best else { return false };
+        let Some((_, cuts, (start, sw), (goal, _))) = best else { return false };
         for &(a, b, d) in &cuts {
             self.knock(a, d);
             self.cuts.push((a.min(b), a.max(b)));
         }
         self.shut(start, sw);
-        if self.degree(goal) != 2 || !self.is_open(goal, gw) {
-            return false; // the start's wall was one of the goal's: try another layout
-        }
+        // The goal's wall is chosen again now the start's is back up: with
+        // both on one loop, the planned one could cut the maze in two.
+        let entry = if self.n_zones == 1 { start } else { self.cuts.last().map(|&(a, b)| if self.zone[a] as usize == last { a } else { b }).unwrap() };
+        let taken: Vec<usize> = self.cuts.iter().flat_map(|&(a, b)| [a, b]).chain([start]).collect();
+        let Some(gw) = self.end_wall(goal, last as u8, &self.distances(entry), &taken) else {
+            return false; // no wall left to put back there: try another layout
+        };
         self.shut(goal, gw);
         self.start = start;
         self.goal = goal;
