@@ -1,4 +1,5 @@
 mod carving;
+mod levels;
 mod loop_census;
 mod maze;
 mod pdf;
@@ -15,6 +16,7 @@ use std::io::BufWriter;
 use std::process::ExitCode;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
+use levels::Level;
 use maze::{walk_length, zones_by_area, Maze};
 use seeded_rng::Rng;
 
@@ -58,7 +60,7 @@ struct Args {
     count: usize,
     per_page: usize,
     seed: Option<u64>,
-    level: Option<usize>,
+    level: Option<&'static Level>,
     solutions_at_the_back: bool,
     solutions_on_backs_of_sheets: bool,
     zone_tints_on_answers: bool,
@@ -108,8 +110,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             }
             "--level" => {
                 let v = value(flag)?;
-                let i = LEVELS.iter().position(|l| l.option_name == v.to_lowercase());
-                a.level = Some(i.ok_or_else(|| format!("--level: no level called {v}"))?);
+                a.level = Some(levels::named(&v).ok_or_else(|| format!("--level: no level called {v}"))?);
             }
             "--solution" => a.solutions_at_the_back = true,
             "--back-solution" => a.solutions_on_backs_of_sheets = true,
@@ -124,7 +125,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
 
 fn run(a: Args) -> Result<(), String> {
     let four_per_page = a.per_page == 4;
-    let level = a.level.map(|i| &LEVELS[i]);
+    let level = a.level;
     let cols = a.cols.or(level.map(|l| l.cols)).unwrap_or(if four_per_page { 18 } else { 36 });
     let rows = a.rows.or(level.map(|l| l.rows)).unwrap_or(if four_per_page { 22 } else { 45 });
     let zones_of_unresized_level = level.filter(|_| a.cols.is_none() && a.rows.is_none()).map(|l| l.zones);
@@ -154,12 +155,12 @@ fn run(a: Args) -> Result<(), String> {
         mazes.push((m, seed, route));
     }
     let numbered = a.count > 1;
-    let name = level.map_or("Maze", |l| l.label);
+    let name = level.map_or("Maze", |l| l.label.as_str());
     let label = |i: usize, answer: bool| match (numbered, answer) {
         (true, false) => format!("{name} {}", i + 1),
         (true, true) => format!("{name} {} solution", i + 1),
         (false, false) => level.map_or(String::new(), |l| l.label.to_string()),
-        (false, true) => format!("{} solution", level.map_or("Maze", |l| l.label)),
+        (false, true) => format!("{} solution", level.map_or("Maze", |l| l.label.as_str())),
     };
     let opts = render::Options {
         per_page: a.per_page,
@@ -203,42 +204,6 @@ fn run(a: Args) -> Result<(), String> {
     Ok(())
 }
 
-#[derive(Clone, Copy)]
-struct ZoneCountRange {
-    fewest: usize,
-    most: usize,
-}
-
-impl ZoneCountRange {
-    fn pick(self, rng: &mut Rng) -> usize {
-        rng.from_to_inclusive(self.fewest, self.most)
-    }
-}
-
-struct Level {
-    option_name: &'static str,
-    label: &'static str,
-    cols: usize,
-    rows: usize,
-    zones: ZoneCountRange,
-}
-
-const fn level(option_name: &'static str, label: &'static str, cols: usize, rows: usize, zones: (usize, usize)) -> Level {
-    Level { option_name, label, cols, rows, zones: ZoneCountRange { fewest: zones.0, most: zones.1 } }
-}
-
-const FULL_SIZE_LEVELS_FOUR_CELLS_APART_EACH_MINI_SIZED_LIKE_THE_NEXT_ONE_UP: [Level; 8] = [
-    level("trivial", "Trivial", 12, 15, (2, 2)),
-    level("easy", "Easy", 16, 20, (3, 4)),
-    level("medium", "Medium", 20, 26, (3, 5)),
-    level("hard", "Hard", 24, 31, (4, 7)),
-    level("mini-trivial", "Mini Trivial", 8, 10, (1, 2)),
-    level("mini-easy", "Mini Easy", 10, 13, (3, 4)),
-    level("mini-medium", "Mini Medium", 12, 15, (3, 5)),
-    level("mini-hard", "Mini Hard", 13, 16, (4, 7)),
-];
-const LEVELS: &[Level] = &FULL_SIZE_LEVELS_FOUR_CELLS_APART_EACH_MINI_SIZED_LIKE_THE_NEXT_ONE_UP;
-const FIRST_MINI_LEVEL: usize = 4;
 const BOOK_MAZES_PER_FULL_SIZE_LEVEL: usize = 2;
 const BOOK_MAZES_PER_MINI_LEVEL: usize = 3;
 
@@ -248,12 +213,12 @@ struct BookSection {
 }
 
 fn book_sections_in_page_order() -> Vec<BookSection> {
-    let mut sections: Vec<BookSection> = LEVELS[..FIRST_MINI_LEVEL]
+    let mut sections: Vec<BookSection> = levels::full_size()
         .iter()
-        .map(|l| BookSection { mazes_per_page: 1, levels: vec![l; BOOK_MAZES_PER_FULL_SIZE_LEVEL] })
+        .map(|l| BookSection { mazes_per_page: l.mazes_per_page, levels: vec![l; BOOK_MAZES_PER_FULL_SIZE_LEVEL] })
         .collect();
-    let minis_level_by_level = LEVELS[FIRST_MINI_LEVEL..].iter().flat_map(|l| vec![l; BOOK_MAZES_PER_MINI_LEVEL]).collect();
-    sections.push(BookSection { mazes_per_page: 4, levels: minis_level_by_level });
+    let minis_level_by_level = levels::minis().iter().flat_map(|l| vec![l; BOOK_MAZES_PER_MINI_LEVEL]).collect();
+    sections.push(BookSection { mazes_per_page: levels::MINI_MAZES_PER_PAGE, levels: minis_level_by_level });
     sections
 }
 
@@ -357,7 +322,7 @@ fn build_book_sizes_and_check_every_rule(first: u64, last: u64) -> bool {
     let mut failed = 0;
     let mut all = loop_census::LoopCensus::default();
     for seed in first..last {
-        let l = &LEVELS[seed as usize % LEVELS.len()];
+        let l = &levels::LEVELS[seed as usize % levels::LEVELS.len()];
         let (cols, rows) = (l.cols, l.rows);
         let mut rng = Rng::new(seed);
         let zones = l.zones.pick(&mut rng);

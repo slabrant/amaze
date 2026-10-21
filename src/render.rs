@@ -435,7 +435,7 @@ fn draw_item_centred_with_caption(
     signature: Option<&str>,
 ) {
     let m = it.maze;
-    let caption_space = font * 1.6;
+    let caption_space = font * CAPTION_LINES_OF_SPACE;
     let s = (area.width / m.cols as f64).min((area.height - caption_space) / m.rows as f64);
     let x0 = area.left + (area.width - s * m.cols as f64) / 2.0;
     let y0 = area.top + (area.height - caption_space - s * m.rows as f64) / 2.0;
@@ -467,34 +467,59 @@ fn draw_item_centred_with_caption(
     }
 }
 
+const PAGE_MARGIN: f64 = 0.5 * 72.0;
+const GUTTER_BETWEEN_MAZES: f64 = 0.3 * 72.0;
+const CAPTION_LINES_OF_SPACE: f64 = 1.6;
+
+struct PageGrid {
+    cols: usize,
+    box_width: f64,
+    box_height: f64,
+    font: f64,
+}
+
+fn page_grid(per_page: usize) -> PageGrid {
+    let cols = if per_page == 1 { 1 } else { 2 };
+    let rows = per_page / cols;
+    PageGrid {
+        cols,
+        box_width: (PAGE_W - 2.0 * PAGE_MARGIN - (cols - 1) as f64 * GUTTER_BETWEEN_MAZES) / cols as f64,
+        box_height: (PAGE_H - 2.0 * PAGE_MARGIN - (rows - 1) as f64 * GUTTER_BETWEEN_MAZES) / rows as f64,
+        font: if per_page == 1 { 9.0 } else { 7.5 },
+    }
+}
+
+pub struct SpaceForMaze {
+    pub width: f64,
+    pub height: f64,
+}
+
+pub fn space_for_one_maze(per_page: usize) -> SpaceForMaze {
+    let grid = page_grid(per_page);
+    SpaceForMaze { width: grid.box_width, height: grid.box_height - grid.font * CAPTION_LINES_OF_SPACE }
+}
+
 pub fn render_pages(items: &[Item], opts: &Options, back_of_sheet: bool) -> Vec<Canvas> {
-    let margin = 0.5 * 72.0;
-    let per = opts.per_page;
-    let cols = if per == 1 { 1 } else { 2 };
-    let rows = per / cols;
-    let gutter = 0.3 * 72.0;
-    let cw = (PAGE_W - 2.0 * margin - (cols - 1) as f64 * gutter) / cols as f64;
-    let ch = (PAGE_H - 2.0 * margin - (rows - 1) as f64 * gutter) / rows as f64;
-    let font = if per == 1 { 9.0 } else { 7.5 };
+    let grid = page_grid(opts.per_page);
     items
-        .chunks(per)
+        .chunks(opts.per_page)
         .map(|chunk| {
             let mut cv = Canvas::new();
             cv.save();
             if back_of_sheet {
                 cv.mirror_left_to_right_from_here_on();
             }
-            let bottom_left = (chunk.len() - 1) / cols * cols;
+            let bottom_left = (chunk.len() - 1) / grid.cols * grid.cols;
             for (k, it) in chunk.iter().enumerate() {
-                let (r, c) = (k / cols, k % cols);
+                let (row, col) = (k / grid.cols, k % grid.cols);
                 let area = Area {
-                    left: margin + c as f64 * (cw + gutter),
-                    top: margin + r as f64 * (ch + gutter),
-                    width: cw,
-                    height: ch,
+                    left: PAGE_MARGIN + col as f64 * (grid.box_width + GUTTER_BETWEEN_MAZES),
+                    top: PAGE_MARGIN + row as f64 * (grid.box_height + GUTTER_BETWEEN_MAZES),
+                    width: grid.box_width,
+                    height: grid.box_height,
                 };
                 let signature = opts.signature_once_a_page.as_deref().filter(|_| k == bottom_left);
-                draw_item_centred_with_caption(&mut cv, it, opts, area, font, back_of_sheet, signature);
+                draw_item_centred_with_caption(&mut cv, it, opts, area, grid.font, back_of_sheet, signature);
             }
             cv.restore();
             cv
