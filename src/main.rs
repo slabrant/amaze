@@ -327,12 +327,13 @@ fn run_book(argv: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// Build mazes for a range of seeds in mixed sizes and check every rule.
+/// Build mazes for a range of seeds in the book's sizes, check every rule,
+/// and measure how many loops wind around or across another zone.
 fn run_checks(first: u64, last: u64) -> bool {
-    const SIZES: [(usize, usize); 3] = [(45, 36), (22, 18), (30, 24)]; // (rows, cols)
     let mut bad = 0;
+    let mut all = check::LoopStats::default();
     for seed in first..last {
-        let (rows, cols) = SIZES[seed as usize % SIZES.len()];
+        let (_, _, cols, rows) = LEVELS[seed as usize % LEVELS.len()];
         let mut rng = Rng::new(seed);
         let zones = default_zones(rows, cols, &mut rng);
         let what = format!("seed {seed} ({cols}x{rows}, {zones} zones)");
@@ -348,13 +349,22 @@ fn run_checks(first: u64, last: u64) -> bool {
         let ms = t.elapsed().as_secs_f64() * 1000.0;
         let errs = check::check(&m);
         let s = &m.stats;
+        let l = check::loop_stats(&m);
+        all.loops += l.loops;
+        all.wrapping += l.wrapping;
+        all.around += l.around;
+        all.links += l.links;
+        all.wrapping_links += l.wrapping_links;
         if errs.is_empty() {
             println!(
-                "{what}: ok  {:>3.0} ms  {} strand crossings, {} hops, {} junctions, layouts tried {}",
+                "{what}: ok  {:>3.0} ms  {} strand crossings, {} hops, {} junctions, loops {} ({} around, {} across), layouts tried {}",
                 ms,
                 s.crossings,
                 s.hops,
                 m.junctions(),
+                l.loops,
+                l.around,
+                l.wrapping - l.around,
                 s.layouts
             );
         } else {
@@ -366,6 +376,14 @@ fn run_checks(first: u64, last: u64) -> bool {
         }
     }
     println!("{} of {} mazes passed", (last - first) as usize - bad, last - first);
+    let pct = |a: usize, b: usize| 100.0 * a as f64 / b.max(1) as f64;
+    println!(
+        "loops: {}; around another zone {:.0}%, only across one {:.0}%; links whose shortest loop wraps {:.0}%",
+        all.loops,
+        pct(all.around, all.loops),
+        pct(all.wrapping - all.around, all.loops),
+        pct(all.wrapping_links, all.links)
+    );
     bad == 0
 }
 

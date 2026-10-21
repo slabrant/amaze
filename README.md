@@ -92,3 +92,8 @@ the generator, and fails if any rule is broken: no dead ends besides start and
 finish, every cell reachable, at most one passage at a time under a bridge, no
 lone pillars of wall, and zones joined only at their single crossings. Run it
 after changing the generator.
+
+It also measures the loops, without judging them: for every passage on a
+loop, the shortest loop through it, and whether that loop winds around
+another zone (another zone's ground lies inside it), only crosses one (over
+or under its passages), or wraps nothing at all.

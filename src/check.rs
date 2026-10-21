@@ -16,8 +16,12 @@
 //!   * Every cell with a floor can be reached from the start.
 //!   * The only links between zones are the designated crossings, and each
 //!     crossing is the only way through.
+//!
+//! `loop_stats` measures, without judging, how many of a maze's loops wind
+//! around or across another zone.
 
-use std::collections::{HashSet, VecDeque};
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
 
 use crate::maze::{opp, Maze, Orient};
 
@@ -202,4 +206,153 @@ pub fn check(m: &Maze) -> Vec<String> {
         }
     }
     errs
+}
+
+/// How a maze's loops sit among the zones.
+#[derive(Clone, Copy, Default, Debug)]
+pub struct LoopStats {
+    /// Distinct loops: for each link that lies on a loop, the shortest loop
+    /// through it.
+    pub loops: usize,
+    /// Of those, the loops that wind around another zone (another zone's
+    /// cell lies inside them) or across one (over or under its passages).
+    pub wrapping: usize,
+    /// Of the wrapping loops, those with another zone's cell inside.
+    pub around: usize,
+    /// Links lying on a loop, and those whose shortest loop wraps.
+    pub links: usize,
+    pub wrapping_links: usize,
+}
+
+/// Find each zone's loops from the finished walls and bridges, and see
+/// which of them wind around or across another zone.
+pub fn loop_stats(m: &Maze) -> LoopStats {
+    let (rows, cols) = (m.rows, m.cols);
+    let n = rows * cols;
+    let rc = |c: usize| (c / cols, c % cols);
+    // Links within a zone, as (a, b, length, cells passed over).
+    let mut links: Vec<(usize, usize, usize, Vec<usize>)> = Vec::new();
+    for c in 0..n {
+        for d in [1, 3] {
+            if m.is_open(c, d) {
+                let x = m.step(c, d).unwrap();
+                if m.zone[c] == m.zone[x] {
+                    links.push((c, x, 1, Vec::new()));
+                }
+            }
+        }
+    }
+    // Zones whose bridges pass over each cell.
+    let mut over: Vec<Vec<u8>> = vec![Vec::new(); n];
+    for b in &m.bridges {
+        for &x in &b.mids {
+            over[x].push(m.zone[b.a]);
+        }
+        if m.zone[b.a] == m.zone[b.b] {
+            links.push((b.a, b.b, b.mids.len() + 1, b.mids.clone()));
+        }
+    }
+    let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for (i, l) in links.iter().enumerate() {
+        adj[l.0].push(i);
+        adj[l.1].push(i);
+    }
+
+    // The shortest way from a to b without link `skip`, as the links taken.
+    let shortest = |a: usize, b: usize, skip: usize| -> Option<Vec<usize>> {
+        let mut dist = vec![usize::MAX; n];
+        let mut prev = vec![usize::MAX; n];
+        dist[a] = 0;
+        let mut heap = BinaryHeap::from([Reverse((0usize, a))]);
+        while let Some(Reverse((d, x))) = heap.pop() {
+            if x == b {
+                break;
+            }
+            if d > dist[x] {
+                continue;
+            }
+            for &i in &adj[x] {
+                if i == skip {
+                    continue;
+                }
+                let l = &links[i];
+                let y = if l.0 == x { l.1 } else { l.0 };
+                if d + l.2 < dist[y] {
+                    dist[y] = d + l.2;
+                    prev[y] = i;
+                    heap.push(Reverse((d + l.2, y)));
+                }
+            }
+        }
+        if dist[b] == usize::MAX {
+            return None;
+        }
+        let mut path = Vec::new();
+        let mut x = b;
+        while x != a {
+            let l = &links[prev[x]];
+            path.push(prev[x]);
+            x = if l.0 == x { l.1 } else { l.0 };
+        }
+        Some(path)
+    };
+
+    // Does the loop (links in order around it, starting at cell `from`)
+    // wind around a zone other than z (2), only across one (1), or
+    // neither (0)?
+    let wraps = |z: u8, from: usize, cycle: &[usize]| -> u8 {
+        let mut verts = vec![from];
+        let mut x = from;
+        let mut across = false;
+        for &i in cycle {
+            let l = &links[i];
+            // Over another zone's ground.
+            across |= l.3.iter().any(|&c| m.zone[c] != z);
+            x = if l.0 == x { l.1 } else { l.0 };
+            verts.push(x);
+        }
+        // Under another zone's bridge.
+        across |= verts.iter().any(|&c| over[c].iter().any(|&w| w != z));
+        // Another zone's cell inside the loop: count the loop's upright
+        // sides to its right, just below the cell's middle.
+        let (mut r0, mut r1, mut c0, mut c1) = (rows, 0, cols, 0);
+        for &v in &verts {
+            let (r, c) = rc(v);
+            (r0, r1, c0, c1) = (r0.min(r), r1.max(r), c0.min(c), c1.max(c));
+        }
+        let sides: Vec<(usize, f64, f64)> = verts
+            .windows(2)
+            .filter(|w| rc(w[0]).1 == rc(w[1]).1)
+            .map(|w| {
+                let (ra, rb) = (rc(w[0]).0 as f64, rc(w[1]).0 as f64);
+                (rc(w[0]).1, ra.min(rb), ra.max(rb))
+            })
+            .collect();
+        let around = (r0..=r1).any(|r| {
+            let y = r as f64 + 0.01;
+            (c0..=c1).any(|c| {
+                m.zone[r * cols + c] != z
+                    && sides.iter().filter(|&&(k, lo, hi)| k > c && lo < y && y < hi).count() % 2 == 1
+            })
+        });
+        if around { 2 } else { across as u8 }
+    };
+
+    let mut seen: HashMap<Vec<usize>, u8> = HashMap::new();
+    let mut st = LoopStats::default();
+    for (i, l) in links.iter().enumerate() {
+        let Some(mut path) = shortest(l.0, l.1, i) else { continue };
+        // Around the loop from l.0: the path over to l.1, then i back.
+        path.reverse();
+        path.push(i);
+        let mut key = path.clone();
+        key.sort_unstable();
+        let w = *seen.entry(key).or_insert_with(|| wraps(m.zone[l.0], l.0, &path));
+        st.links += 1;
+        st.wrapping_links += (w > 0) as usize;
+    }
+    st.loops = seen.len();
+    st.wrapping = seen.values().filter(|&&w| w > 0).count();
+    st.around = seen.values().filter(|&&w| w == 2).count();
+    st
 }
