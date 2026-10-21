@@ -248,7 +248,7 @@ const LEVELS: [Level; 8] = [
     level("easy", "Easy", 20, 26, (3, 4)),
     level("medium", "Medium", 25, 32, (3, 5)),
     level("hard", "Hard", 30, 39, (4, 7)),
-    level("mini-trivial", "Mini Trivial", 7, 9, (2, 2)),
+    level("mini-trivial", "Mini Trivial", 7, 9, (1, 2)),
     level("mini-easy", "Mini Easy", 10, 13, (3, 4)),
     level("mini-medium", "Mini Medium", 12, 15, (3, 5)),
     level("mini-hard", "Mini Hard", 14, 18, (4, 7)),
