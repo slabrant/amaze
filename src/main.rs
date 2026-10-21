@@ -220,18 +220,18 @@ fn run(a: Args) -> Result<(), String> {
 /// (label, cols, rows)), in page order.
 type Section = (&'static str, usize, Vec<(String, usize, usize)>);
 
-/// Levels: (name for --level, label, cols, rows). Each level is about 1.4
-/// times as wide as the last (its route about 1.6 times as long), and each
-/// mini is sized so its cells print the same size as its full-size twin's.
+/// Levels: (name for --level, label, cols, rows). Each full-size level is
+/// eight cells wider than the last, rows filling the page, and each mini is
+/// sized so its cells print the same size as its full-size twin's.
 const LEVELS: [(&str, &str, usize, usize); 8] = [
-    ("trivial", "Trivial", 21, 27),
-    ("easy", "Easy", 29, 37),
-    ("medium", "Medium", 40, 52),
-    ("hard", "Hard", 56, 73),
-    ("mini-trivial", "Mini Trivial", 10, 13),
-    ("mini-easy", "Mini Easy", 14, 18),
-    ("mini-medium", "Mini Medium", 19, 24),
-    ("mini-hard", "Mini Hard", 27, 35),
+    ("trivial", "Trivial", 16, 20),
+    ("easy", "Easy", 24, 31),
+    ("medium", "Medium", 32, 41),
+    ("hard", "Hard", 40, 52),
+    ("mini-trivial", "Mini Trivial", 8, 10),
+    ("mini-easy", "Mini Easy", 12, 15),
+    ("mini-medium", "Mini Medium", 15, 19),
+    ("mini-hard", "Mini Hard", 19, 24),
 ];
 /// Where the minis start in LEVELS.
 const MINIS: usize = 4;
