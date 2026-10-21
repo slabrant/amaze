@@ -3,22 +3,24 @@ use std::collections::BinaryHeap;
 
 use crate::maze::{walk_length, Maze};
 
-pub const LEVELS_PER_CELL: f64 = 0.26;
-pub const LONG_SHORTEST_LOOPS: f64 = 0.22;
-pub const MANY_FORKS: f64 = 0.19;
-pub const ZONE_CONTACT: f64 = 0.15;
-pub const LONGER_BRIDGES: f64 = 0.07;
-pub const ZONE_COUNT: f64 = 0.05;
-pub const WALKING_DISTANCE: f64 = 0.05;
-pub const CROW_FLIES_CLOSENESS: f64 = 0.01;
+pub const MANY_FORKS: f64 = 0.25;
+pub const LEVELS_PER_CELL: f64 = 0.22;
+pub const LONG_SHORTEST_LOOPS: f64 = 0.19;
+pub const ZONE_CONTACT: f64 = 0.14;
+pub const LONGER_BRIDGES: f64 = 0.06;
+pub const CHOKE_POINT_SPREAD: f64 = 0.05;
+pub const ZONE_COUNT: f64 = 0.04;
+pub const WALKING_DISTANCE: f64 = 0.035;
+pub const CROW_FLIES_CLOSENESS: f64 = 0.015;
 
-pub const CELLS_PER_ZONE: f64 = 100.0;
+pub const CELLS_PER_ZONE: f64 = 60.0;
 pub const LOOP_IN_BOARD_SPANS_FOR_FULL_MARKS: f64 = 1.0;
 pub const CONTACT_PER_CELL_FOR_FULL_MARKS: f64 = 1.0;
 pub const BRIDGE_CELLS_FOR_FULL_MARKS: f64 = 6.0;
 pub const WALK_IN_BOARD_SPANS_FOR_FULL_MARKS: f64 = 2.0;
 pub const STEP_BASELINE: f64 = 0.05;
 pub const LEANING_STRENGTH: f64 = 4.0;
+pub const CHANCE_TO_BRANCH: f64 = 0.1;
 
 #[derive(Clone, Copy, Default)]
 pub struct Scores {
@@ -27,19 +29,21 @@ pub struct Scores {
     pub many_forks: f64,
     pub zone_contact: f64,
     pub longer_bridges: f64,
+    pub choke_point_spread: f64,
     pub zone_count: f64,
     pub walking_distance: f64,
     pub crow_flies_closeness: f64,
 }
 
 impl Scores {
-    pub fn weighted(&self) -> [(&'static str, f64, f64); 8] {
+    pub fn weighted(&self) -> [(&'static str, f64, f64); 9] {
         [
+            ("many forks", MANY_FORKS, self.many_forks),
             ("levels per cell", LEVELS_PER_CELL, self.levels_per_cell),
             ("long shortest loops", LONG_SHORTEST_LOOPS, self.long_shortest_loops),
-            ("many forks", MANY_FORKS, self.many_forks),
             ("zone contact", ZONE_CONTACT, self.zone_contact),
             ("longer bridges", LONGER_BRIDGES, self.longer_bridges),
+            ("choke point spread", CHOKE_POINT_SPREAD, self.choke_point_spread),
             ("zone count", ZONE_COUNT, self.zone_count),
             ("walking distance", WALKING_DISTANCE, self.walking_distance),
             ("crow-flies closeness", CROW_FLIES_CLOSENESS, self.crow_flies_closeness),
@@ -56,6 +60,7 @@ impl Scores {
         self.many_forks += other.many_forks;
         self.zone_contact += other.zone_contact;
         self.longer_bridges += other.longer_bridges;
+        self.choke_point_spread += other.choke_point_spread;
         self.zone_count += other.zone_count;
         self.walking_distance += other.walking_distance;
         self.crow_flies_closeness += other.crow_flies_closeness;
@@ -73,6 +78,25 @@ pub fn target_zone_count(rows: usize, cols: usize) -> usize {
 pub fn zone_count_score(rows: usize, cols: usize, zones: usize) -> f64 {
     let target = target_zone_count(rows, cols) as f64;
     (1.0 - (zones as f64 - target).abs() / target).max(0.0)
+}
+
+pub fn choke_point_spread_score(m: &Maze, choke_points: &[(usize, usize)]) -> f64 {
+    if choke_points.len() < 2 {
+        return 1.0;
+    }
+    let centre = |&(a, b): &(usize, usize)| {
+        (((a / m.cols + b / m.cols) as f64) / 2.0, ((a % m.cols + b % m.cols) as f64) / 2.0)
+    };
+    let points: Vec<(f64, f64)> = choke_points.iter().map(centre).collect();
+    let evenly_spread = ((m.rows * m.cols) as f64 / points.len() as f64).sqrt();
+    let nearest_other = |i: usize| {
+        (0..points.len())
+            .filter(|&j| j != i)
+            .map(|j| ((points[i].0 - points[j].0).powi(2) + (points[i].1 - points[j].1).powi(2)).sqrt())
+            .fold(f64::MAX, f64::min)
+    };
+    let mean_nearest = (0..points.len()).map(nearest_other).sum::<f64>() / points.len() as f64;
+    (mean_nearest / evenly_spread).min(1.0)
 }
 
 pub fn loop_score(m: &Maze, cells_round: usize) -> f64 {
@@ -110,6 +134,7 @@ pub fn score(m: &Maze) -> Scores {
         many_forks: forks as f64 / maze_cells as f64,
         zone_contact: (weakest_zone_contact(m) / CONTACT_PER_CELL_FOR_FULL_MARKS).min(1.0),
         longer_bridges: mean_bridge,
+        choke_point_spread: choke_point_spread_score(m, &m.zone_crossings),
         zone_count: zone_count_score(m.rows, m.cols, m.zone_count),
         walking_distance: walking_score(m, route_walked),
         crow_flies_closeness: crow_flies_score(m, m.start, m.goal),

@@ -131,9 +131,10 @@ impl Maze {
                 return;
             }
             let newest = *growing.last().unwrap();
-            if options.iter().any(|&(c, _)| c == newest) {
-                options.retain(|&(c, _)| c == newest);
-            }
+            let can_extend = options.iter().any(|&(c, _)| c == newest);
+            let can_branch = options.iter().any(|&(c, _)| c != newest);
+            let extend = can_extend && !(can_branch && rng.from_zero_to_one() < goals::CHANCE_TO_BRANCH);
+            options.retain(|&(c, _)| (c == newest) == extend);
             let pulls: Vec<f64> = options.iter().map(|&(c, w)| self.pull_to_grow(c, w)).collect();
             let (c, w) = options[rng.index_by_weight(&leaning(&pulls))];
             self.take(c, w);
@@ -170,9 +171,18 @@ impl Maze {
     }
 
     fn lay_route_in_uneven_stretches(&mut self, route: &[usize], rng: &mut Rng) {
-        let mut cuts: Vec<usize> = (1..route.len()).collect();
-        rng.shuffle(&mut cuts);
-        cuts.truncate(self.zone_count - 1);
+        let mut cuts: Vec<usize> = Vec::new();
+        while cuts.len() + 1 < self.zone_count {
+            let options: Vec<usize> = (1..route.len()).filter(|i| !cuts.contains(i)).collect();
+            let pulls: Vec<f64> = options
+                .iter()
+                .map(|&i| {
+                    let choke_points: Vec<(usize, usize)> = cuts.iter().chain([&i]).map(|&cut| (route[cut - 1], route[cut])).collect();
+                    STEP_BASELINE + goals::CHOKE_POINT_SPREAD * goals::choke_point_spread_score(self, &choke_points)
+                })
+                .collect();
+            cuts.push(options[rng.index_by_weight(&leaning(&pulls))]);
+        }
         for (i, &c) in route.iter().enumerate() {
             self.zone[c] = cuts.iter().filter(|&&cut| cut <= i).count() as u8;
         }
