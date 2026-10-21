@@ -9,6 +9,7 @@
 //!     one straight passage across the bridge. Never two passages side by
 //!     side under the same bridge. A cell where two bridges cross has no floor.
 //!   * Bridges never run along on top of each other, and never land under one.
+//!   * Something goes under every bridge: a passage, or another bridge.
 //!   * No opening runs into a floorless cell.
 //!   * The start and finish each have exactly one way out; no other cell is a
 //!     dead end, and none is sealed off.
@@ -116,6 +117,9 @@ pub fn check(m: &Maze) -> Vec<String> {
                 errs.push(format!("two passages side by side under a bridge at {:?}", rc(w[0])));
             }
         }
+        if b.mids.iter().all(|&x| floorless[x] && under[x] != 3) {
+            errs.push(format!("bridge {:?} over nothing but solid ground", rc(b.a)));
+        }
     }
     for c in 0..n {
         if floorless[c] && m.open[c] != 0 {
@@ -215,7 +219,8 @@ pub struct LoopStats {
     /// through it.
     pub loops: usize,
     /// Of those, the loops that wind around another zone (another zone's
-    /// cell lies inside them) or across one (over or under its passages).
+    /// cell lies inside them) or across one (over or under its passages or
+    /// bridges; solid ground under a bridge doesn't count).
     pub wrapping: usize,
     /// Of the wrapping loops, those with another zone's cell inside.
     pub around: usize,
@@ -244,9 +249,11 @@ pub fn loop_stats(m: &Maze) -> LoopStats {
     }
     // Zones whose bridges pass over each cell.
     let mut over: Vec<Vec<u8>> = vec![Vec::new(); n];
+    let mut under_count = vec![0usize; n];
     for b in &m.bridges {
         for &x in &b.mids {
             over[x].push(m.zone[b.a]);
+            under_count[x] += 1;
         }
         if m.zone[b.a] == m.zone[b.b] {
             links.push((b.a, b.b, b.mids.len() + 1, b.mids.clone()));
@@ -306,8 +313,8 @@ pub fn loop_stats(m: &Maze) -> LoopStats {
         let mut across = false;
         for &i in cycle {
             let l = &links[i];
-            // Over another zone's ground.
-            across |= l.3.iter().any(|&c| m.zone[c] != z);
+            // Over another zone's passage or bridge.
+            across |= l.3.iter().any(|&c| m.zone[c] != z && (m.open[c] != 0 || under_count[c] > 1));
             x = if l.0 == x { l.1 } else { l.0 };
             verts.push(x);
         }

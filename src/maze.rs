@@ -676,6 +676,8 @@ impl Maze {
     /// solid or carries a passage across, never two passages side by side
     /// (that reads as a ladder of little rooms); most passages first, for
     /// more weave. Cells already under a crossing bridge must be solid.
+    /// Something always goes under: a passage, or another bridge. A bridge
+    /// over nothing but solid ground would just be a straight corridor.
     fn try_bridge(&mut self, lay: &Layout, from: usize, to: usize, rng: &mut Rng) -> bool {
         let mut lines = self.bridge_lines(lay, from, to);
         rng.shuffle(&mut lines);
@@ -701,7 +703,7 @@ impl Maze {
                 continue;
             }
             let mut patterns: Vec<u32> =
-                (0..1u32 << mids.len()).filter(|p| p & (p >> 1) == 0 && p & forced == 0).collect();
+                (0..1u32 << mids.len()).filter(|p| p & (p >> 1) == 0 && p & forced == 0 && (p | forced) != 0).collect();
             rng.shuffle(&mut patterns);
             patterns.sort_by_key(|p| Reverse(p.count_ones()));
             let mut zones: Vec<u8> = mids.iter().map(|&m| self.zone[m]).collect();
@@ -888,8 +890,11 @@ impl Maze {
             let mut tries = 0;
             let cells = loop {
                 let saved = (self.clone(), state.clone(), entry.clone());
+                // An ear that walls in a lone cell is walked again.
                 if let Some(cells) = self.ear(z as u8, &from[z], &mut state, &mut entry, rng) {
-                    break cells;
+                    if !self.walls_in_cell(z as u8, &state) {
+                        break cells;
+                    }
                 }
                 (*self, state, entry) = saved;
                 tries += 1;
@@ -901,6 +906,17 @@ impl Maze {
             from[z].extend(cells);
         }
         state.iter().all(|&s| s == CARVED)
+    }
+
+    /// Is some uncarved cell of zone z walled in, with no uncarved
+    /// neighbour of its own? Taking it in later could only make a tiny loop.
+    fn walls_in_cell(&self, z: u8, state: &[u8]) -> bool {
+        (0..self.zone.len()).any(|c| {
+            self.zone[c] == z
+                && state[c] == UNCARVED
+                && !(0..4).filter_map(|d| self.can_open(c, d, true)).any(|x| state[x] == UNCARVED)
+                && !self.partners[c].iter().any(|&x| state[x] == UNCARVED)
+        })
     }
 
     /// Ways on from c into uncarved ground of its zone: through a wall, or
@@ -946,9 +962,10 @@ impl Maze {
             }
         }
         let mut ear = vec![u];
-        // For each step taken, the maze before it and the cells it added;
-        // for each place along the ear, the cells already tried from there.
-        let mut steps: Vec<(Maze, usize)> = Vec::new();
+        // For each step taken, where from, which way, whether it hopped, and
+        // how many cells it added; for each place along the ear, the cells
+        // already tried from there.
+        let mut steps: Vec<(usize, usize, bool, usize)> = Vec::new();
         let mut tried: Vec<Vec<usize>> = vec![Vec::new()];
         let mut backtracks = 0;
         loop {
@@ -982,7 +999,20 @@ impl Maze {
                 self.ways_on_by(cur, state, !bare).into_iter().filter(|w| !tried[here].contains(&w.1)).collect();
             // Never cut off a lone uncarved cell: the only way to take it in
             // later would be a tiny loop.
-            ways.retain(|w| !self.cuts_pocket(cur, w.1, state));
+            ways.retain(|w| {
+                if self.cuts_pocket(cur, w.1, state) {
+                    return false;
+                }
+                // Onto a bridge's landing: the ear goes straight on across
+                // it, or stops there if its far end is carved.
+                match self.partners[w.1].as_slice() {
+                    [p] if !(w.2 && *p == cur) => {
+                        let on = if state[*p] == UNCARVED { *p } else { usize::MAX };
+                        !self.cuts_pocket(w.1, on, state)
+                    }
+                    _ => true,
+                }
+            });
             // Close a loop round or across another zone as soon as there is
             // one. Boxed in, rather than close a loop round nothing, come back
             // beside the start where a wall can go back up between them: the
@@ -1013,12 +1043,16 @@ impl Maze {
             }
             if ways.is_empty() {
                 // Back up a step and try another way from there.
-                let (saved, added) = steps.pop()?;
+                let (from, d, hop, added) = steps.pop()?;
                 backtracks += 1;
                 if backtracks > EAR_BACKTRACKS {
                     return None;
                 }
-                *self = saved;
+                if hop {
+                    self.unhop();
+                } else {
+                    self.shut(from, d);
+                }
                 for c in ear.drain(ear.len() - added..) {
                     state[c] = UNCARVED;
                 }
@@ -1037,7 +1071,7 @@ impl Maze {
                 .collect();
             let (d, m, hop) = ways[rng.weighted(&w)];
             tried[here].push(m);
-            steps.push((self.clone(), 1));
+            steps.push((cur, d, hop, 1));
             tried.push(Vec::new());
             if hop {
                 self.hop(cur, m);
@@ -1056,7 +1090,7 @@ impl Maze {
                 entry[p] = self.dir_to(m, p);
                 state[p] = IN_EAR;
                 ear.push(p);
-                steps.last_mut().unwrap().1 = 2;
+                steps.last_mut().unwrap().3 = 2;
             } else if let Some(ring) = self.ring(&ear, p, &back, state) {
                 // Its far end is carved: the bridge closes the loop.
                 return Some(self.close_ear(&ear, &ring, Join::Bridge, bare, state));
@@ -1071,7 +1105,7 @@ impl Maze {
         let next = |c: usize| -> Vec<usize> {
             let mut out: Vec<usize> = (0..4).filter_map(|d| self.can_open(c, d, true)).collect();
             out.extend(&self.partners[c]);
-            out.retain(|&x| x != m && state[x] == UNCARVED);
+            out.retain(|&x| x != m && x != cur && state[x] == UNCARVED);
             out
         };
         next(cur).into_iter().any(|q| {
@@ -1144,14 +1178,15 @@ impl Maze {
     }
 
     /// Does the loop through these cells, in order, wind round or across a
-    /// zone other than z? Across: it bridges over another zone's ground or
-    /// passes under another zone's bridge. Round: another zone's cell lies
-    /// inside it.
+    /// zone other than z? Across: it bridges over another zone's passage or
+    /// bridge, or passes under another zone's bridge. Round: another zone's
+    /// cell lies inside it.
     fn ring_wraps(&self, z: u8, ring: &[usize]) -> bool {
         let k = ring.len();
         for i in 0..k {
             let (a, b) = (ring[i], ring[(i + 1) % k]);
-            if !self.adjacent(a, b) && self.cells_between(a.min(b), a.max(b)).iter().any(|&m| self.zone[m] != z) {
+            let over = |m: usize| self.zone[m] != z && (!self.solid[m] || self.under[m] == 3);
+            if !self.adjacent(a, b) && self.cells_between(a.min(b), a.max(b)).iter().any(|&m| over(m)) {
                 return true;
             }
         }
@@ -1196,6 +1231,17 @@ impl Maze {
         let solid: Vec<bool> = self.cells_between(lo, hi).iter().map(|&m| self.solid[m]).collect();
         self.add_bridge(lo, hi, &solid);
         self.stats.hops += 1;
+    }
+
+    /// Take back the last bridge laid, a hop: nothing else has used it.
+    fn unhop(&mut self) {
+        let b = self.bridges.pop().unwrap();
+        self.partners[b.a].pop();
+        self.partners[b.b].pop();
+        for &m in &b.mids {
+            self.under[m] &= !b.o.bit();
+        }
+        self.stats.hops -= 1;
     }
 
     fn cells_between(&self, a: usize, b: usize) -> Vec<usize> {

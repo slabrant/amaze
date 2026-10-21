@@ -115,7 +115,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             }
             "--level" => {
                 let v = value(flag)?;
-                let i = LEVELS.iter().position(|l| l.0 == v.to_lowercase());
+                let i = LEVELS.iter().position(|l| l.name == v.to_lowercase());
                 a.level = Some(i.ok_or_else(|| format!("--level: no level called {v}"))?);
             }
             "--solution" => a.solution = true,
@@ -131,9 +131,11 @@ fn parse(argv: &[String]) -> Result<Args, String> {
 
 fn run(a: Args) -> Result<(), String> {
     let small = a.per_page == 4;
-    let level = a.level.map(|i| LEVELS[i]);
-    let cols = a.cols.or(level.map(|l| l.2)).unwrap_or(if small { 18 } else { 36 });
-    let rows = a.rows.or(level.map(|l| l.3)).unwrap_or(if small { 22 } else { 45 });
+    let level = a.level.map(|i| &LEVELS[i]);
+    let cols = a.cols.or(level.map(|l| l.cols)).unwrap_or(if small { 18 } else { 36 });
+    let rows = a.rows.or(level.map(|l| l.rows)).unwrap_or(if small { 22 } else { 45 });
+    // A level's own zone counts, unless its size was changed.
+    let level_zones = level.filter(|_| a.cols.is_none() && a.rows.is_none()).map(|l| l.zones);
     let mut seed = a.seed.unwrap_or_else(random_seed);
     let mut mazes = Vec::new();
     for i in 0..a.count {
@@ -141,7 +143,10 @@ fn run(a: Args) -> Result<(), String> {
             seed = code::next(seed);
         }
         let mut rng = Rng::new(seed);
-        let zones = a.zones.unwrap_or_else(|| default_zones(rows, cols, &mut rng));
+        let zones = a.zones.unwrap_or_else(|| match level_zones {
+            Some((lo, hi)) => rng.range(lo, hi),
+            None => default_zones(rows, cols, &mut rng),
+        });
         let t = Instant::now();
         let m = Maze::generate(rows, cols, zones, &mut rng).map_err(|e| format!("seed {seed}: {e}"))?;
         let sol = m.solve().ok_or_else(|| format!("seed {seed}: goal unreachable (bug)"))?;
@@ -157,12 +162,12 @@ fn run(a: Args) -> Result<(), String> {
         mazes.push((m, seed, sol));
     }
     let numbered = a.count > 1;
-    let name = level.map_or("Maze", |l| l.1);
+    let name = level.map_or("Maze", |l| l.label);
     let label = |i: usize, sol: bool| match (numbered, sol) {
         (true, false) => format!("{name} {}", i + 1),
         (true, true) => format!("{name} {} solution", i + 1),
-        (false, false) => level.map_or(String::new(), |l| l.1.to_string()),
-        (false, true) => format!("{} solution", level.map_or("Maze", |l| l.1)),
+        (false, false) => level.map_or(String::new(), |l| l.label.to_string()),
+        (false, true) => format!("{} solution", level.map_or("Maze", |l| l.label)),
     };
     let opts = render::Options {
         per_page: a.per_page,
@@ -216,32 +221,45 @@ fn run(a: Args) -> Result<(), String> {
     Ok(())
 }
 
-/// The book's sections: (name, mazes per page, its mazes as
-/// (label, cols, rows)), in page order.
-type Section = (&'static str, usize, Vec<(String, usize, usize)>);
+/// The book's sections: (name, mazes per page, its mazes' levels), in
+/// page order.
+type Section = (&'static str, usize, Vec<&'static Level>);
 
-/// Levels: (name for --level, label, cols, rows). Each full-size level is
-/// eight cells wider than the last, rows filling the page, and each mini is
-/// sized so its cells print the same size as its full-size twin's.
-const LEVELS: [(&str, &str, usize, usize); 8] = [
-    ("trivial", "Trivial", 16, 20),
-    ("easy", "Easy", 24, 31),
-    ("medium", "Medium", 32, 41),
-    ("hard", "Hard", 40, 52),
-    ("mini-trivial", "Mini Trivial", 8, 10),
-    ("mini-easy", "Mini Easy", 12, 15),
-    ("mini-medium", "Mini Medium", 15, 19),
-    ("mini-hard", "Mini Hard", 19, 24),
+/// A size of maze, as in the book.
+struct Level {
+    /// Name for --level.
+    name: &'static str,
+    label: &'static str,
+    cols: usize,
+    rows: usize,
+    /// Fewest and most zones, picked at random between.
+    zones: (usize, usize),
+}
+
+const fn level(name: &'static str, label: &'static str, cols: usize, rows: usize, zones: (usize, usize)) -> Level {
+    Level { name, label, cols, rows, zones }
+}
+
+/// Each full-size level is eight cells wider than the last, rows filling
+/// the page, and each mini is sized so its cells print the same size as its
+/// full-size twin's. A mini has as many zones as its twin.
+const LEVELS: [Level; 8] = [
+    level("trivial", "Trivial", 16, 20, (2, 2)),
+    level("easy", "Easy", 24, 31, (3, 4)),
+    level("medium", "Medium", 32, 41, (3, 5)),
+    level("hard", "Hard", 40, 52, (4, 7)),
+    level("mini-trivial", "Mini Trivial", 8, 10, (2, 2)),
+    level("mini-easy", "Mini Easy", 12, 15, (3, 4)),
+    level("mini-medium", "Mini Medium", 15, 19, (3, 5)),
+    level("mini-hard", "Mini Hard", 19, 24, (4, 7)),
 ];
 /// Where the minis start in LEVELS.
 const MINIS: usize = 4;
 
 fn book_sections() -> Vec<Section> {
-    let full = |&(_, label, cols, rows): &(&str, &'static str, usize, usize)| -> Section {
-        (label, 1, vec![(label.to_string(), cols, rows); 3])
-    };
+    let full = |l: &'static Level| -> Section { (l.label, 1, vec![l; 3]) };
     // Minis, three of each level in turn, four to a page.
-    let minis = LEVELS[MINIS..].iter().flat_map(|&(_, label, cols, rows)| vec![(label.to_string(), cols, rows); 3]).collect();
+    let minis = LEVELS[MINIS..].iter().flat_map(|l| vec![l; 3]).collect();
     let mut out: Vec<Section> = LEVELS[..MINIS].iter().map(full).collect();
     out.push(("Minis", 4, minis));
     out
@@ -273,23 +291,19 @@ fn run_book(argv: &[String]) -> Result<(), String> {
     let sections = book_sections();
     // Every maze gets its own code, drawn from the book's.
     let mut draw = Rng::new(base);
-    let jobs: Vec<(usize, usize, u64)> = sections
-        .iter()
-        .flat_map(|(_, _, mazes)| mazes.iter().map(|&(_, cols, rows)| (cols, rows)))
-        .enumerate()
-        .map(|(_, (cols, rows))| (cols, rows, code::fresh(&mut draw)))
-        .collect();
+    let jobs: Vec<(&Level, u64)> =
+        sections.iter().flat_map(|(_, _, mazes)| mazes.iter().copied()).map(|l| (l, code::fresh(&mut draw))).collect();
 
     // Each maze is independent: build them all at once.
     let t = Instant::now();
     let built: Vec<Result<(Maze, Vec<usize>), String>> = std::thread::scope(|scope| {
         let handles: Vec<_> = jobs
             .iter()
-            .map(|&(cols, rows, seed)| {
+            .map(|&(l, seed)| {
                 scope.spawn(move || {
                     let mut rng = Rng::new(seed);
-                    let zones = default_zones(rows, cols, &mut rng);
-                    let m = Maze::generate(rows, cols, zones, &mut rng).map_err(|e| format!("seed {seed}: {e}"))?;
+                    let zones = rng.range(l.zones.0, l.zones.1);
+                    let m = Maze::generate(l.rows, l.cols, zones, &mut rng).map_err(|e| format!("seed {seed}: {e}"))?;
                     let sol = m.solve().ok_or_else(|| format!("seed {seed}: goal unreachable (bug)"))?;
                     Ok((m, sol))
                 })
@@ -305,10 +319,15 @@ fn run_book(argv: &[String]) -> Result<(), String> {
     for (_, per, mazes) in &sections {
         let items: Vec<render::Item> = mazes
             .iter()
-            .map(|(label, _, _)| {
+            .map(|l| {
                 let (m, sol) = &built[k];
-                let it =
-                    render::Item { maze: m, seed: Some(jobs[k].2), solution: Some(sol), answer: false, label: label.clone() };
+                let it = render::Item {
+                    maze: m,
+                    seed: Some(jobs[k].1),
+                    solution: Some(sol),
+                    answer: false,
+                    label: l.label.to_string(),
+                };
                 k += 1;
                 it
             })
@@ -333,9 +352,10 @@ fn run_checks(first: u64, last: u64) -> bool {
     let mut bad = 0;
     let mut all = check::LoopStats::default();
     for seed in first..last {
-        let (_, _, cols, rows) = LEVELS[seed as usize % LEVELS.len()];
+        let l = &LEVELS[seed as usize % LEVELS.len()];
+        let (cols, rows) = (l.cols, l.rows);
         let mut rng = Rng::new(seed);
-        let zones = default_zones(rows, cols, &mut rng);
+        let zones = rng.range(l.zones.0, l.zones.1);
         let what = format!("seed {seed} ({cols}x{rows}, {zones} zones)");
         let t = Instant::now();
         let m = match Maze::generate(rows, cols, zones, &mut rng) {
