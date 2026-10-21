@@ -73,7 +73,7 @@ the book.
 `amaze book -o book.pdf` makes a whole book for double-sided printing: three
 each of Trivial, Easy, Medium and Hard, then twelve minis four to a page
 (three each of the same levels, in turn), every page with its solutions on
-the back. Each level is eight cells wider than the last, and each mini's
+the back. Each level is five cells wider than the last, and each mini's
 cells print the same size as its full-size twin's: a mini is one corner of
 its twin, so to speak. Every maze shows its code; the book's own code is
 printed in the terminal, and `--seed` with it makes the same book again.

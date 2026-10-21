@@ -240,18 +240,18 @@ const fn level(name: &'static str, label: &'static str, cols: usize, rows: usize
     Level { name, label, cols, rows, zones }
 }
 
-/// Each full-size level is eight cells wider than the last, rows filling
+/// Each full-size level is five cells wider than the last, rows filling
 /// the page, and each mini is sized so its cells print the same size as its
 /// full-size twin's. A mini has as many zones as its twin.
 const LEVELS: [Level; 8] = [
-    level("trivial", "Trivial", 16, 20, (2, 2)),
-    level("easy", "Easy", 24, 31, (3, 4)),
-    level("medium", "Medium", 32, 41, (3, 5)),
-    level("hard", "Hard", 40, 52, (4, 7)),
-    level("mini-trivial", "Mini Trivial", 8, 10, (2, 2)),
-    level("mini-easy", "Mini Easy", 12, 15, (3, 4)),
-    level("mini-medium", "Mini Medium", 15, 19, (3, 5)),
-    level("mini-hard", "Mini Hard", 19, 24, (4, 7)),
+    level("trivial", "Trivial", 15, 19, (2, 2)),
+    level("easy", "Easy", 20, 26, (3, 4)),
+    level("medium", "Medium", 25, 32, (3, 5)),
+    level("hard", "Hard", 30, 39, (4, 7)),
+    level("mini-trivial", "Mini Trivial", 7, 9, (2, 2)),
+    level("mini-easy", "Mini Easy", 10, 13, (3, 4)),
+    level("mini-medium", "Mini Medium", 12, 15, (3, 5)),
+    level("mini-hard", "Mini Hard", 14, 18, (4, 7)),
 ];
 /// Where the minis start in LEVELS.
 const MINIS: usize = 4;
