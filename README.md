@@ -3,10 +3,11 @@
 Printable mazes with bridges that weave over and under each other.
 
 - Paths are broad corridors separated by thin, lightly hatched walls.
-- Bridges are straight stretches of path raised over solid ground or over a
-  path crossing underneath. A path that goes under a bridge stops at one side
-  and comes out the other, with its hidden edges shown as faint dashes. Where
-  bridges cross, they alternate over and under like a basket weave.
+- Bridges are straight runs of path between two landings that pass over or
+  under what they cross. Over solid ground or a plain path, a bridge is on
+  top; where bridges cross each other, each one alternates over and under
+  along its length like a basket weave. A path that goes under stops at one
+  side and comes out the other, with its hidden edges shown as faint dashes.
 - Start at the arrow, finish at the bullseye. Those are the only dead ends.
 - Behind the scenes the maze is split into zones: strands that wind through
   each other like spaghetti, crossing over and under one another on bridges

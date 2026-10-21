@@ -70,8 +70,8 @@ impl Orient {
     }
 }
 
-/// A straight raised path from landing `a` to landing `b` (a above or left
-/// of b) over the cells `mids`.
+/// A straight path from landing `a` to landing `b` (a above or left of b)
+/// across the cells `mids`, over or under whatever it crosses there.
 #[derive(Clone, Debug)]
 pub struct Bridge {
     pub a: usize,

@@ -3,11 +3,12 @@
 //! Rules of the printed maze:
 //!   * Paths are thin corridors through solid ground. Start at the arrow and
 //!     finish at the bullseye. Those two are the only dead ends.
-//!   * A bridge is a straight stretch of path raised over whatever is below:
-//!     solid ground, or a path crossing underneath. A path that goes under a
-//!     bridge stops at one side and comes out the other, its hidden edges
-//!     shown as faint dashes. Where bridges cross, they alternate over and
-//!     under like a basket weave.
+//!   * A bridge is a straight run of path between two landings that passes
+//!     over or under what it crosses. Over solid ground or a plain path it is
+//!     on top; where bridges cross each other, each alternates over and under
+//!     along its length like a basket weave. A path that goes under stops at
+//!     one side and comes out the other, its hidden edges shown as faint
+//!     dashes.
 
 mod check;
 mod code;
