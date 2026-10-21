@@ -891,7 +891,10 @@ impl Maze {
             let cells = loop {
                 let saved = (self.clone(), state.clone(), entry.clone());
                 // An ear that walls in a lone cell is walked again.
-                if let Some(cells) = self.ear(z as u8, &from[z], &mut state, &mut entry, rng) {
+                // Early walks hold out for a loop worth having; later ones
+                // may settle for the longest loop they can close.
+                let settle = tries >= EAR_TRIES / 2;
+                if let Some(cells) = self.ear(z as u8, &from[z], settle, &mut state, &mut entry, rng) {
                     if !self.walls_in_cell(z as u8, &state) {
                         break cells;
                     }
@@ -943,7 +946,15 @@ impl Maze {
     /// it is boxed in with no loop it may close, it backs up and tries
     /// another way, up to EAR_BACKTRACKS times. Returns its new cells, or
     /// None if it found no loop to close.
-    fn ear(&mut self, z: u8, starts: &[usize], state: &mut [u8], entry: &mut [usize], rng: &mut Rng) -> Option<Vec<usize>> {
+    fn ear(
+        &mut self,
+        z: u8,
+        starts: &[usize],
+        settle: bool,
+        state: &mut [u8],
+        entry: &mut [usize],
+        rng: &mut Rng,
+    ) -> Option<Vec<usize>> {
         let n = self.zone.len();
         let u = rng.pick(starts);
         // The zone's first ear: it has nothing carved to come back to but u.
@@ -1035,7 +1046,8 @@ impl Maze {
                     self.shut(u, self.dir_to(u, v));
                     return Some(self.close_ear(&ear, &ring, join, bare, state));
                 }
-                let longest = closes.iter().filter(|c| !self.pillar(&c.0)).max_by_key(|c| (c.0.len(), rng.below(1000)));
+                let longest =
+                    closes.iter().filter(|c| settle && !self.pillar(&c.0)).max_by_key(|c| (c.0.len(), rng.below(1000)));
                 if let Some((ring, join)) = longest {
                     let (ring, join) = (ring.clone(), *join);
                     return Some(self.close_ear(&ear, &ring, join, bare, state));
