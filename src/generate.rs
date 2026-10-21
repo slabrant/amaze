@@ -202,17 +202,6 @@ impl Maze {
         (self.start, self.goal) = (best.1, best.2);
     }
 
-    fn zone_contact_per_cell(&self) -> Vec<f64> {
-        let mut contact = vec![0usize; self.zone_count];
-        let mut cells = vec![0usize; self.zone_count];
-        for c in (0..self.zone.len()).filter(|&c| self.zone[c] != NO_ZONE) {
-            let z = self.zone[c] as usize;
-            cells[z] += 1;
-            contact[z] += (0..4).filter_map(|d| self.step(c, d)).filter(|&x| self.zone[x] != NO_ZONE && self.zone[x] as usize != z).count();
-        }
-        (0..self.zone_count).map(|z| contact[z] as f64 / cells[z].max(1) as f64).collect()
-    }
-
     fn grow_zones_toward_each_other(&mut self, rng: &mut Rng) {
         let mut newest: Vec<Option<usize>> = vec![None; self.zone_count];
         let mut size = vec![0usize; self.zone_count];
