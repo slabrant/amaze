@@ -19,19 +19,10 @@ struct WayOut {
 impl Maze {
     pub fn generate(rows: usize, cols: usize, rng: &mut Rng) -> Maze {
         let target = goals::target_zone_count(rows, cols);
-        let mut best: Option<(f64, Maze)> = None;
-        for _ in 0..goals::CANDIDATE_MAZES {
-            let zones = rng.from_to_inclusive(target.saturating_sub(1).max(1), target + 1);
-            let m = Maze::candidate(rows, cols, zones, rng);
-            let total = goals::score(&m).total();
-            if best.as_ref().is_none_or(|(best_total, _)| total > *best_total) {
-                best = Some((total, m));
-            }
-        }
-        best.unwrap().1
-    }
-
-    fn candidate(rows: usize, cols: usize, zones: usize, rng: &mut Rng) -> Maze {
+        let zone_counts: Vec<usize> = (target.saturating_sub(1).max(1)..=target + 1).collect();
+        let pulls: Vec<f64> =
+            zone_counts.iter().map(|&z| STEP_BASELINE + goals::ZONE_COUNT * goals::zone_count_score(rows, cols, z)).collect();
+        let zones = zone_counts[rng.index_by_weight(&pulls)];
         let route = Maze::empty(rows, cols, 1).route_through_a_plain_tree(rng);
         let mut m = Maze::empty(rows, cols, zones.min(route.len()));
         m.lay_route_in_uneven_stretches(&route, rng);

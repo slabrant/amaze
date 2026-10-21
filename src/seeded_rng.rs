@@ -43,10 +43,6 @@ impl Xoshiro256StarStar {
         ((self.next_u64() as u128 * n as u128) >> 64) as usize
     }
 
-    pub fn from_to_inclusive(&mut self, lo: usize, hi: usize) -> usize {
-        lo + self.below(hi - lo + 1)
-    }
-
     pub fn shuffle<T>(&mut self, v: &mut [T]) {
         for i in (1..v.len()).rev() {
             v.swap(i, self.below(i + 1));

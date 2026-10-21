@@ -17,7 +17,6 @@ pub const LOOP_IN_BOARD_SPANS_FOR_FULL_MARKS: f64 = 1.0;
 pub const CONTACT_PER_CELL_FOR_FULL_MARKS: f64 = 1.0;
 pub const BRIDGE_CELLS_FOR_FULL_MARKS: f64 = 6.0;
 pub const WALK_IN_BOARD_SPANS_FOR_FULL_MARKS: f64 = 2.0;
-pub const CANDIDATE_MAZES: usize = 12;
 pub const STEP_BASELINE: f64 = 0.05;
 
 #[derive(Clone, Copy, Default)]
@@ -70,6 +69,11 @@ pub fn target_zone_count(rows: usize, cols: usize) -> usize {
     ((rows * cols) as f64 / CELLS_PER_ZONE).round().max(1.0) as usize
 }
 
+pub fn zone_count_score(rows: usize, cols: usize, zones: usize) -> f64 {
+    let target = target_zone_count(rows, cols) as f64;
+    (1.0 - (zones as f64 - target).abs() / target).max(0.0)
+}
+
 pub fn loop_score(m: &Maze, cells_round: usize) -> f64 {
     (cells_round as f64 / (LOOP_IN_BOARD_SPANS_FOR_FULL_MARKS * board_span(m))).min(1.0)
 }
@@ -105,10 +109,7 @@ pub fn score(m: &Maze) -> Scores {
         many_forks: forks as f64 / maze_cells as f64,
         zone_contact: (weakest_zone_contact(m) / CONTACT_PER_CELL_FOR_FULL_MARKS).min(1.0),
         longer_bridges: mean_bridge,
-        zone_count: {
-            let target = target_zone_count(m.rows, m.cols) as f64;
-            (1.0 - (m.zone_count as f64 - target).abs() / target).max(0.0)
-        },
+        zone_count: zone_count_score(m.rows, m.cols, m.zone_count),
         walking_distance: walking_score(m, route_walked),
         crow_flies_closeness: crow_flies_score(m, m.start, m.goal),
     }
