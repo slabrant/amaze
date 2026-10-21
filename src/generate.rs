@@ -27,12 +27,13 @@ impl Maze {
         let mut m = Maze::empty(rows, cols, zones.min(route.len()));
         m.lay_route_in_uneven_stretches(&route, rng);
         m.grow_zones_toward_each_other(rng);
+        m.move_cells_with_one_neighbour_in_their_zone(&route);
         let mut in_tree = vec![false; m.zone.len()];
         for &c in &route {
             in_tree[c] = true;
         }
-        let growing = route.get(1..route.len() - 1).unwrap_or_default().to_vec();
-        m.grow_tree(&mut in_tree, growing, true, rng);
+        m.grow_tree(&mut in_tree, route.clone(), true, rng);
+        m.choose_start_and_finish_among_dead_ends();
         m.join_or_fill_in_every_dead_end(rng);
         m
     }
@@ -120,6 +121,10 @@ impl Maze {
             if options.is_empty() {
                 return;
             }
+            let newest = *growing.last().unwrap();
+            if options.iter().any(|&(c, _)| c == newest) {
+                options.retain(|&(c, _)| c == newest);
+            }
             let pulls: Vec<f64> = options.iter().map(|&(c, w)| self.pull_to_grow(c, w)).collect();
             let (c, w) = options[rng.index_by_weight(&pulls)];
             self.take(c, w);
@@ -168,30 +173,77 @@ impl Maze {
                 self.zone_crossings.push((w[0].min(w[1]), w[0].max(w[1])));
             }
         }
-        self.start = route[0];
-        self.goal = *route.last().unwrap();
+    }
+
+    fn choose_start_and_finish_among_dead_ends(&mut self) {
+        let last_zone = self.zone_count as u8 - 1;
+        let dead_ends_in = |z: u8| (0..self.zone.len()).filter(|&c| self.zone[c] == z && self.degree(c) == 1).collect::<Vec<_>>();
+        let (starts, finishes) = (dead_ends_in(0), dead_ends_in(last_zone));
+        let mut best = (f64::MIN, starts[0], finishes[0]);
+        for &a in &starts {
+            let walking = self.walking_distances_from(a);
+            for &b in finishes.iter().filter(|&&b| b != a) {
+                let pull = goals::WALKING_DISTANCE * walking_score(self, walking[b])
+                    + goals::CROW_FLIES_CLOSENESS * crow_flies_score(self, a, b);
+                if pull > best.0 {
+                    best = (pull, a, b);
+                }
+            }
+        }
+        (self.start, self.goal) = (best.1, best.2);
+    }
+
+    fn zone_contact_per_cell(&self) -> Vec<f64> {
+        let mut contact = vec![0usize; self.zone_count];
+        let mut cells = vec![0usize; self.zone_count];
+        for c in (0..self.zone.len()).filter(|&c| self.zone[c] != NO_ZONE) {
+            let z = self.zone[c] as usize;
+            cells[z] += 1;
+            contact[z] += (0..4).filter_map(|d| self.step(c, d)).filter(|&x| self.zone[x] != NO_ZONE && self.zone[x] as usize != z).count();
+        }
+        (0..self.zone_count).map(|z| contact[z] as f64 / cells[z].max(1) as f64).collect()
     }
 
     fn grow_zones_toward_each_other(&mut self, rng: &mut Rng) {
         loop {
-            let mut options: Vec<(usize, u8)> = Vec::new();
-            let mut pulls: Vec<f64> = Vec::new();
+            let contact = self.zone_contact_per_cell();
+            let mut by_zone: Vec<Vec<(usize, usize)>> = vec![Vec::new(); self.zone_count];
             for y in (0..self.zone.len()).filter(|&y| self.zone[y] == NO_ZONE) {
                 let beside: Vec<u8> = (0..4).filter_map(|d| self.step(y, d)).map(|x| self.zone[x]).filter(|&z| z != NO_ZONE).collect();
-                let mut zones = beside.clone();
-                zones.sort();
-                zones.dedup();
-                for z in zones {
+                for &z in &beside {
                     let touches_other_zones = beside.iter().filter(|&&other| other != z).count();
-                    options.push((y, z));
-                    pulls.push(STEP_BASELINE + goals::ZONE_CONTACT * touches_other_zones as f64);
+                    if !by_zone[z as usize].iter().any(|&(x, _)| x == y) {
+                        by_zone[z as usize].push((y, touches_other_zones));
+                    }
                 }
             }
-            if options.is_empty() {
+            let growable: Vec<usize> = (0..self.zone_count).filter(|&z| !by_zone[z].is_empty()).collect();
+            if growable.is_empty() {
                 return;
             }
-            let (y, z) = options[rng.index_by_weight(&pulls)];
-            self.zone[y] = z;
+            let weakest = *growable.iter().min_by_key(|&&z| self.zone.iter().filter(|&&x| x as usize == z).count()).unwrap();
+            let _ = &contact;
+            let options = &by_zone[weakest];
+            let pulls: Vec<f64> = options.iter().map(|&(_, touches)| STEP_BASELINE + goals::ZONE_CONTACT * touches as f64).collect();
+            let (y, _) = options[rng.index_by_weight(&pulls)];
+            self.zone[y] = weakest as u8;
+        }
+    }
+
+    fn move_cells_with_one_neighbour_in_their_zone(&mut self, route: &[usize]) {
+        let mut moved = true;
+        while moved {
+            moved = false;
+            for c in (0..self.zone.len()).filter(|c| !route.contains(c)) {
+                let beside: Vec<u8> = (0..4).filter_map(|d| self.step(c, d)).map(|x| self.zone[x]).collect();
+                let in_zone = |z: u8| beside.iter().filter(|&&y| y == z).count();
+                if in_zone(self.zone[c]) < 2 {
+                    if let Some(&better) = beside.iter().filter(|&&z| in_zone(z) >= 2).max() {
+                        self.zone[c] = better;
+                        moved = true;
+                    }
+                }
+            }
         }
     }
 
