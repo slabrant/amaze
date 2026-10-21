@@ -12,7 +12,8 @@
 //!   * Something goes under every bridge: a passage, or another bridge.
 //!   * No opening runs into a floorless cell.
 //!   * The start and finish each have exactly one way out; no other cell is a
-//!     dead end, and none is sealed off.
+//!     dead end, and none is sealed off. Solid ground (a cell marked solid
+//!     that no bridge crosses) has no openings at all.
 //!   * No loop of four cells: a lone pillar of wall in a little open room.
 //!   * Every cell with a floor can be reached from the start.
 //!   * The only links between zones are the designated crossings, and each
@@ -132,6 +133,13 @@ pub fn check(m: &Maze) -> Vec<String> {
         }
     }
     for x in 0..n {
+        if under[x] == 0 && m.solid[x] {
+            if !ops(x).is_empty() {
+                errs.push(format!("solid ground {:?} has openings", rc(x)));
+            }
+            floorless[x] = true;
+            continue;
+        }
         if under[x] != 0 || x == m.start || x == m.goal {
             continue;
         }
@@ -339,6 +347,7 @@ pub fn loop_stats(m: &Maze) -> LoopStats {
             let y = r as f64 + 0.01;
             (c0..=c1).any(|c| {
                 m.zone[r * cols + c] != z
+                    && !m.solid[r * cols + c]
                     && sides.iter().filter(|&&(k, lo, hi)| k > c && lo < y && y < hi).count() % 2 == 1
             })
         });

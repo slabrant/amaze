@@ -31,14 +31,15 @@ Generation never repairs or relaxes anything after the fact:
 2. **Carving.** Each zone is carved in ears: a corridor sets out from what is
    already carved, through new ground, and keeps going until it can join up
    again in a loop that winds round or across another zone (over or under
-   its passages, or with its ground inside the loop). Only when it is boxed
-   in does it settle for less: first a detour, joining back beside where it
-   set out so the corridor it left simply runs through the new ground,
-   making no loop at all; then the longest loop it can close. It never cuts
-   off a lone cell, never closes a loop round a lone pillar, and backs up to
-   try another way when boxed in with nowhere to go. So no corridor is ever
-   a dead end, and nothing is closed up after the fact. Zones take turns, so
-   a corridor can hop over another zone's finished passage on a new bridge.
+   its passages, or with its paths inside the loop). Boxed in, it may come
+   back as a detour, joining back beside where it set out so the corridor it
+   left runs through the new ground and no loop is made, or close a long
+   loop; otherwise it backs up to try another way, and in the end gives up.
+   The whole space need not be filled: ground no ear takes in stays solid
+   rather than being forced into little loops. So no corridor is ever a dead
+   end, and nothing is closed up after the fact. Zones take turns, so a
+   corridor can hop over another zone's finished passage on a new bridge. A
+   bridge left with nothing under it becomes the straight corridor it is.
 3. **Route.** The one way across between each zone and the next, and the
    start and finish, are chosen so each zone's stretch of the route is long.
    The start and finish are made by putting one wall back on a loop, so they
@@ -98,8 +99,9 @@ zone's paths on solution pages, to see the strands), `--graph-paper`. Run
 
 It rebuilds everything from the finished walls and bridges, independently of
 the generator, and fails if any rule is broken: no dead ends besides start and
-finish, every cell reachable, at most one passage at a time under a bridge, no
-lone pillars of wall, and zones joined only at their single crossings. Run it
+finish, every path cell reachable, solid ground with no openings, at most one
+passage at a time under a bridge, something under every bridge, no lone
+pillars of wall, and zones joined only at their single crossings. Run it
 after changing the generator.
 
 It also measures the loops, without judging them: for every passage on a

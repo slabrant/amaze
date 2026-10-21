@@ -101,7 +101,8 @@ const POCKET_PULL: f64 = 1.0; // pull toward cells with fewer ways on
 const HOP_MIDS: usize = 3; // most cells a carving hop may pass over
 const EAR_TRIES: usize = 30; // walks at an ear before the layout is redrawn
 const EAR_BACKTRACKS: usize = 500; // steps an ear may back up before it is walked again
-const POCKET: usize = 2; // uncarved patches smaller than this are never cut off
+const LOOP_MIN: usize = 12; // fewest steps round a loop that winds round nothing
+const SEED_TRIES: usize = 10; // cells a zone may begin from before the layout is redrawn
 
 // Cells while carving.
 const UNCARVED: u8 = 0;
@@ -856,29 +857,38 @@ impl Maze {
     /// Carve each zone in ears. An ear sets out from the carved part of its
     /// zone through uncarved ground and keeps going until it can join the
     /// carved part again, or itself, in a loop that winds round or across
-    /// another zone. Only when it is boxed in, with no new ground left to
-    /// reach, does it settle for the longest loop it can close. So no
-    /// corridor is ever left as a dead end, and no dead end is ever closed
-    /// after the fact. Zones take turns an ear at a time, so an ear can hop
-    /// over another zone's finished passages. An ear that can close no loop
-    /// at all is walked again; returns false if one never can.
+    /// another zone. Boxed in, it may instead come back as a detour, or close
+    /// a long loop; otherwise it backs up and tries another way, and in the
+    /// end gives up. The whole space need not be filled: ground no ear could
+    /// take in stays solid, rather than being forced into little loops. So no
+    /// corridor is ever left as a dead end, and nothing is closed up after
+    /// the fact. Zones take turns an ear at a time, so an ear can hop over
+    /// another zone's finished passages. Returns false if some zone got no
+    /// ear at all.
     fn carve(&mut self, rng: &mut Rng) -> bool {
         let n = self.zone.len();
         let mut state: Vec<u8> = (0..n).map(|c| if self.floorless(c) { CARVED } else { UNCARVED }).collect();
         let mut entry = vec![usize::MAX; n]; // direction each cell was entered by
-        // Carved cells of each zone that may still set out on an ear.
+        // Carved cells of each zone that may still set out on an ear, and
+        // the cells each zone has tried to begin from.
         let mut from: Vec<Vec<usize>> = vec![Vec::new(); self.n_zones];
-        for (z, list) in from.iter_mut().enumerate() {
-            let cells: Vec<usize> =
-                (0..n).filter(|&c| self.zone[c] == z as u8 && state[c] == UNCARVED && self.plain(c)).collect();
-            if cells.is_empty() {
-                return false;
-            }
-            let c = rng.pick(&cells);
-            state[c] = CARVED;
-            list.push(c);
-        }
+        let mut seeds: Vec<Vec<usize>> = vec![Vec::new(); self.n_zones];
         loop {
+            // A zone with nothing carved yet begins again somewhere new.
+            for z in 0..self.n_zones {
+                if from[z].is_empty() && !(0..n).any(|c| self.zone[c] == z as u8 && state[c] == CARVED && !self.floorless(c)) {
+                    let cells: Vec<usize> = (0..n)
+                        .filter(|&c| self.zone[c] == z as u8 && state[c] == UNCARVED && self.plain(c) && !seeds[z].contains(&c))
+                        .collect();
+                    if cells.is_empty() || seeds[z].len() >= SEED_TRIES {
+                        return false;
+                    }
+                    let c = rng.pick(&cells);
+                    seeds[z].push(c);
+                    state[c] = CARVED;
+                    from[z].push(c);
+                }
+            }
             for list in from.iter_mut() {
                 list.retain(|&c| !self.ways_on(c, &state).is_empty());
             }
@@ -887,36 +897,78 @@ impl Maze {
                 break;
             }
             let z = rng.pick(&live);
-            let mut tries = 0;
-            let cells = loop {
+            let u = rng.pick(&from[z]);
+            let mut cells = None;
+            for _ in 0..EAR_TRIES {
                 let saved = (self.clone(), state.clone(), entry.clone());
-                // An ear that walls in a lone cell is walked again.
-                if let Some(cells) = self.ear(z as u8, &from[z], &mut state, &mut entry, rng) {
-                    if !self.walls_in_cell(z as u8, &state) {
-                        break cells;
-                    }
+                cells = self.ear(z as u8, u, &mut state, &mut entry, rng);
+                if cells.is_some() {
+                    break;
                 }
                 (*self, state, entry) = saved;
-                tries += 1;
-                if tries == EAR_TRIES {
-                    return false;
+            }
+            match cells {
+                Some(cells) => {
+                    from[z].retain(|&c| state[c] == CARVED);
+                    from[z].extend(cells);
                 }
-            };
-            from[z].retain(|&c| state[c] == CARVED);
-            from[z].extend(cells);
+                None => {
+                    // Nothing worth carving from here.
+                    from[z].retain(|&c| c != u);
+                    if self.degree(u) == 0 {
+                        state[u] = UNCARVED;
+                    }
+                }
+            }
         }
-        state.iter().all(|&s| s == CARVED)
+        if (0..self.n_zones).any(|z| !(0..n).any(|c| self.zone[c] == z as u8 && state[c] == CARVED && self.degree(c) > 0)) {
+            return false;
+        }
+        self.leave_ground(&state);
+        true
     }
 
-    /// Is some uncarved cell of zone z walled in, with no uncarved
-    /// neighbour of its own? Taking it in later could only make a tiny loop.
-    fn walls_in_cell(&self, z: u8, state: &[u8]) -> bool {
-        (0..self.zone.len()).any(|c| {
-            self.zone[c] == z
-                && state[c] == UNCARVED
-                && !(0..4).filter_map(|d| self.can_open(c, d, true)).any(|x| state[x] == UNCARVED)
-                && !self.partners[c].iter().any(|&x| state[x] == UNCARVED)
-        })
+    /// Ground no ear took in stays solid, and a bridge that lands on it
+    /// goes, with whatever ran under it left as it was. A bridge left with nothing under it is just a straight corridor,
+    /// so it becomes one: the ground it spanned becomes path of its zone.
+    fn leave_ground(&mut self, state: &[u8]) {
+        let left: Vec<usize> = (0..self.zone.len()).filter(|&c| state[c] == UNCARVED).collect();
+        for &c in &left {
+            self.solid[c] = true;
+        }
+        let gone: Vec<usize> =
+            (0..self.bridges.len()).filter(|&i| self.solid[self.bridges[i].a] || self.solid[self.bridges[i].b]).collect();
+        for &i in gone.iter().rev() {
+            self.drop_bridge(i);
+        }
+        let bare: Vec<usize> = (0..self.bridges.len())
+            .filter(|&i| self.bridges[i].mids.iter().all(|&m| self.solid[m] && self.under[m] != 3))
+            .collect();
+        for &i in bare.iter().rev() {
+            let b = self.drop_bridge(i);
+            let d = self.dir_to(b.a, b.b);
+            let z = self.zone[b.a];
+            for &m in &b.mids {
+                self.solid[m] = false;
+                self.zone[m] = z;
+            }
+            let mut x = b.a;
+            while x != b.b {
+                self.knock(x, d);
+                x = self.step(x, d).unwrap();
+            }
+        }
+    }
+
+    /// Remove bridge i, and its marks on the cells it spans.
+    fn drop_bridge(&mut self, i: usize) -> Bridge {
+        let b = self.bridges.remove(i);
+        self.partners[b.a].retain(|&x| x != b.b);
+        self.partners[b.b].retain(|&x| x != b.a);
+        for &m in &b.mids {
+            self.under[m] &= !b.o.bit();
+        }
+        b
     }
 
     /// Ways on from c into uncarved ground of its zone: through a wall, or
@@ -939,13 +991,12 @@ impl Maze {
             .collect()
     }
 
-    /// Walk one ear of zone z from one of the carved cells `starts`. Where
-    /// it is boxed in with no loop it may close, it backs up and tries
-    /// another way, up to EAR_BACKTRACKS times. Returns its new cells, or
-    /// None if it found no loop to close.
-    fn ear(&mut self, z: u8, starts: &[usize], state: &mut [u8], entry: &mut [usize], rng: &mut Rng) -> Option<Vec<usize>> {
+    /// Walk one ear of zone z from the carved cell u. Where it is boxed in
+    /// with no loop it may close, it backs up and tries another way, up to
+    /// EAR_BACKTRACKS times. Returns its new cells, or None if it found no
+    /// loop to close.
+    fn ear(&mut self, z: u8, u: usize, state: &mut [u8], entry: &mut [usize], rng: &mut Rng) -> Option<Vec<usize>> {
         let n = self.zone.len();
-        let u = rng.pick(starts);
         // The zone's first ear: it has nothing carved to come back to but u.
         let bare = self.degree(u) == 0;
         // The shortest ways back to u through the carved part of the zone,
@@ -971,10 +1022,9 @@ impl Maze {
         loop {
             let cur = *ear.last().unwrap();
             let prev = if ear.len() > 1 { ear[ear.len() - 2] } else { usize::MAX };
-            // The loops it could close from here, by a wall or a hop. Not if
-            // that would leave a lone uncarved cell cut off beside it.
+            // The loops it could close from here, by a wall or a hop.
             let mut closes: Vec<(Vec<usize>, Join)> = Vec::new();
-            if ear.len() > 1 && !self.cuts_pocket(cur, usize::MAX, state) {
+            if ear.len() > 1 {
                 for d in 0..4 {
                     if self.is_open(cur, d) {
                         continue;
@@ -995,24 +1045,8 @@ impl Maze {
             }
             // A first ear doesn't hop: its lead-in may be taken back.
             let here = steps.len();
-            let mut ways: Vec<(usize, usize, bool)> =
+            let ways: Vec<(usize, usize, bool)> =
                 self.ways_on_by(cur, state, !bare).into_iter().filter(|w| !tried[here].contains(&w.1)).collect();
-            // Never cut off a lone uncarved cell: the only way to take it in
-            // later would be a tiny loop.
-            ways.retain(|w| {
-                if self.cuts_pocket(cur, w.1, state) {
-                    return false;
-                }
-                // Onto a bridge's landing: the ear goes straight on across
-                // it, or stops there if its far end is carved.
-                match self.partners[w.1].as_slice() {
-                    [p] if !(w.2 && *p == cur) => {
-                        let on = if state[*p] == UNCARVED { *p } else { usize::MAX };
-                        !self.cuts_pocket(w.1, on, state)
-                    }
-                    _ => true,
-                }
-            });
             // Close a loop round or across another zone as soon as there is
             // one. Boxed in, rather than close a loop round nothing, come back
             // beside the start where a wall can go back up between them: the
@@ -1035,7 +1069,7 @@ impl Maze {
                     self.shut(u, self.dir_to(u, v));
                     return Some(self.close_ear(&ear, &ring, join, bare, state));
                 }
-                let longest = closes.iter().filter(|c| !self.pillar(&c.0)).max_by_key(|c| (c.0.len(), rng.below(1000)));
+                let longest = closes.iter().filter(|c| c.0.len() >= LOOP_MIN).max_by_key(|c| (c.0.len(), rng.below(1000)));
                 if let Some((ring, join)) = longest {
                     let (ring, join) = (ring.clone(), *join);
                     return Some(self.close_ear(&ear, &ring, join, bare, state));
@@ -1098,31 +1132,6 @@ impl Maze {
         }
     }
 
-    /// Would stepping on from cur to m (or stopping at cur, if m is not a
-    /// cell) leave behind, beside cur, a patch of fewer than POCKET uncarved
-    /// cells of its zone cut off from m?
-    fn cuts_pocket(&self, cur: usize, m: usize, state: &[u8]) -> bool {
-        let next = |c: usize| -> Vec<usize> {
-            let mut out: Vec<usize> = (0..4).filter_map(|d| self.can_open(c, d, true)).collect();
-            out.extend(&self.partners[c]);
-            out.retain(|&x| x != m && x != cur && state[x] == UNCARVED);
-            out
-        };
-        next(cur).into_iter().any(|q| {
-            let mut seen = vec![q];
-            let mut i = 0;
-            while i < seen.len() && seen.len() < POCKET {
-                for x in next(seen[i]) {
-                    if !seen.contains(&x) {
-                        seen.push(x);
-                    }
-                }
-                i += 1;
-            }
-            seen.len() < POCKET
-        })
-    }
-
     /// Close the ear's loop `ring` by `join`, and mark its cells carved.
     /// Returns the new ones. A first ear that came back to itself rather
     /// than its start drops its lead-in, so the zone begins as one loop.
@@ -1168,11 +1177,6 @@ impl Maze {
         Some(ring)
     }
 
-    /// A loop of four cells: a lone pillar of wall in a little open room.
-    fn pillar(&self, ring: &[usize]) -> bool {
-        ring.len() == 4 && (0..4).all(|i| self.adjacent(ring[i], ring[(i + 1) % 4]))
-    }
-
     fn adjacent(&self, a: usize, b: usize) -> bool {
         (a / self.cols).abs_diff(b / self.cols) + (a % self.cols).abs_diff(b % self.cols) == 1
     }
@@ -1216,7 +1220,7 @@ impl Maze {
             xs.sort_unstable();
             for pair in xs.chunks(2) {
                 if let [lo, hi] = *pair {
-                    if (lo..hi).any(|c| self.zone[r * cols + c] != z) {
+                    if (lo..hi).any(|c| self.zone[r * cols + c] != z && !self.solid[r * cols + c]) {
                         return true;
                     }
                 }
@@ -1418,15 +1422,19 @@ impl Maze {
                 best = Some((total, cuts, (start, sw), (goal, gw)));
             }
         }
-        let Some((_, cuts, (start, sw), (goal, gw))) = best else { return false };
+        let Some((_, cuts, (start, sw), (goal, _))) = best else { return false };
         for &(a, b, d) in &cuts {
             self.knock(a, d);
             self.cuts.push((a.min(b), a.max(b)));
         }
         self.shut(start, sw);
-        if self.degree(goal) != 2 || !self.is_open(goal, gw) {
-            return false; // the start's wall was one of the goal's: try another layout
-        }
+        // The goal's wall is chosen again now the start's is back up: with
+        // both on one loop, the planned one could cut the maze in two.
+        let entry = if self.n_zones == 1 { start } else { self.cuts.last().map(|&(a, b)| if self.zone[a] as usize == last { a } else { b }).unwrap() };
+        let taken: Vec<usize> = self.cuts.iter().flat_map(|&(a, b)| [a, b]).chain([start]).collect();
+        let Some(gw) = self.end_wall(goal, last as u8, &self.distances(entry), &taken) else {
+            return false; // no wall left to put back there: try another layout
+        };
         self.shut(goal, gw);
         self.start = start;
         self.goal = goal;
