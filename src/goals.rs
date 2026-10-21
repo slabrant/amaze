@@ -4,11 +4,11 @@ use std::collections::BinaryHeap;
 use crate::maze::{walk_length, Maze};
 
 pub const MANY_FORKS: f64 = 0.25;
-pub const LEVELS_PER_CELL: f64 = 0.22;
-pub const LONG_SHORTEST_LOOPS: f64 = 0.19;
-pub const ZONE_CONTACT: f64 = 0.14;
+pub const LEVELS_PER_CELL: f64 = 0.20;
+pub const LONG_SHORTEST_LOOPS: f64 = 0.17;
+pub const ZONE_CONTACT: f64 = 0.13;
 pub const LONGER_BRIDGES: f64 = 0.06;
-pub const CHOKE_POINT_SPREAD: f64 = 0.05;
+pub const CHOKE_POINT_SPREAD: f64 = 0.10;
 pub const ZONE_COUNT: f64 = 0.04;
 pub const WALKING_DISTANCE: f64 = 0.035;
 pub const CROW_FLIES_CLOSENESS: f64 = 0.015;
@@ -19,7 +19,7 @@ pub const CONTACT_PER_CELL_FOR_FULL_MARKS: f64 = 1.0;
 pub const BRIDGE_CELLS_FOR_FULL_MARKS: f64 = 6.0;
 pub const WALK_IN_BOARD_SPANS_FOR_FULL_MARKS: f64 = 2.0;
 pub const STEP_BASELINE: f64 = 0.05;
-pub const LEANING_STRENGTH: f64 = 4.0;
+pub const LEANING_STRENGTH: f64 = 16.0;
 pub const CHANCE_TO_BRANCH: f64 = 0.1;
 
 #[derive(Clone, Copy, Default)]
