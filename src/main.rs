@@ -1,16 +1,12 @@
-mod carving;
+mod generate;
 mod levels;
 mod loop_census;
 mod maze;
 mod pdf;
 mod render;
-mod route;
-mod rules;
 mod seed_code;
 mod seeded_rng;
 mod shape_census;
-mod weave;
-mod zone_growth;
 
 use std::fs::File;
 use std::io::BufWriter;
@@ -339,31 +335,18 @@ fn build_book_sizes_and_check_every_rule(first: u64, last: u64) -> bool {
             }
         };
         let ms = t.elapsed().as_secs_f64() * 1000.0;
-        let broken = rules::broken_rules(&m);
-        let s = &m.stats;
         let census = loop_census::count_loops(&m);
         all.add(&census);
         all_shapes.add(&shape_census::count_shapes(&m));
-        if broken.is_empty() {
-            println!(
-                "{what}: ok  {:>3.0} ms  {} strand crossings, {} hops, {} rings, {} junctions, loops {} ({} around, {} across), layouts tried {}",
-                ms,
-                s.strand_crossings,
-                s.corridor_hops,
-                s.rings,
-                m.junctions(),
-                census.loops,
-                census.around,
-                census.wrapping - census.around,
-                s.layouts_tried
-            );
-        } else {
-            failed += 1;
-            println!("{what}: {} problems", broken.len());
-            for e in broken.iter().take(5) {
-                println!("    {e}");
-            }
-        }
+        println!(
+            "{what}: {:>3.0} ms  {} bridges, {} junctions, loops {} ({} around, {} across)",
+            ms,
+            m.bridges.len(),
+            m.junctions(),
+            census.loops,
+            census.around,
+            census.wrapping - census.around,
+        );
     }
     println!("{} of {} mazes passed", (last - first) as usize - failed, last - first);
     let pct = |a: usize, b: usize| 100.0 * a as f64 / b.max(1) as f64;

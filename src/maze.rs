@@ -11,8 +11,6 @@ pub const DC: [isize; 4] = [0, 0, -1, 1];
 pub const NO_ZONE: u8 = u8::MAX;
 pub const CROSSING: u8 = 0b11;
 
-const LAYOUTS_TRIED_BEFORE_GIVING_UP: usize = 200;
-pub const STRAND_BLOCK_CELLS: usize = 3;
 
 pub fn opposite(d: usize) -> usize {
     d ^ 1
@@ -76,19 +74,11 @@ pub struct Maze {
     pub zone_crossings: Vec<(usize, usize)>,
     pub start: usize,
     pub goal: usize,
-    pub stats: Stats,
 }
 
-#[derive(Clone, Default, Debug)]
-pub struct Stats {
-    pub layouts_tried: usize,
-    pub strand_crossings: usize,
-    pub corridor_hops: usize,
-    pub rings: usize,
-}
 
 impl Maze {
-    fn empty(rows: usize, cols: usize, zone_count: usize) -> Maze {
+    pub(crate) fn empty(rows: usize, cols: usize, zone_count: usize) -> Maze {
         let n = rows * cols;
         Maze {
             rows,
@@ -104,30 +94,7 @@ impl Maze {
             zone_crossings: Vec::new(),
             start: 0,
             goal: 0,
-            stats: Stats::default(),
         }
-    }
-
-    pub fn generate(rows: usize, cols: usize, zone_count: usize, rng: &mut Rng) -> Result<Maze, String> {
-        if rows < 4 || cols < 4 {
-            return Err("a maze needs at least 4 rows and 4 columns".into());
-        }
-        if zone_count == 0 || zone_count > most_zones_that_fit(rows, cols) {
-            return Err(format!("{zone_count} zones will not fit a {cols}x{rows} maze"));
-        }
-        for layout in 1..=LAYOUTS_TRIED_BEFORE_GIVING_UP {
-            let mut m = Maze::empty(rows, cols, zone_count);
-            if !m.grow_zones(rng) {
-                continue;
-            }
-            if !m.carve_in_ears(rng) || !m.place_crossings_start_and_finish(rng) {
-                continue;
-            }
-            m.choose_top_bridge_at_each_crossing(rng);
-            m.stats.layouts_tried = layout;
-            return Ok(m);
-        }
-        Err(format!("no workable zone layout for {zone_count} zones in a {cols}x{rows} maze"))
     }
 
     pub fn step(&self, c: usize, d: usize) -> Option<usize> {
@@ -299,7 +266,5 @@ pub fn zones_by_area(rows: usize, cols: usize, rng: &mut Rng) -> usize {
 }
 
 pub fn most_zones_that_fit(rows: usize, cols: usize) -> usize {
-    let blocks = (rows / STRAND_BLOCK_CELLS).max(1) * (cols / STRAND_BLOCK_CELLS).max(1);
-    let two_blocks_each = blocks / 2;
-    two_blocks_each.clamp(1, 64)
+    (rows * cols / 18).clamp(1, 64)
 }
