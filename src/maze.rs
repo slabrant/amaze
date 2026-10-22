@@ -59,6 +59,23 @@ pub enum StepError {
 }
 
 #[derive(Clone, Debug)]
+pub struct Routes {
+    pub distances: Vec<usize>,
+    came_from: Vec<Option<PieceId>>,
+}
+
+impl Routes {
+    pub fn route_to(&self, to: PieceId) -> Vec<PieceId> {
+        let mut route = vec![to];
+        while let Some(before) = self.came_from[route[route.len() - 1]] {
+            route.push(before);
+        }
+        route.reverse();
+        route
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct Maze {
     pub grid: Grid,
     pub start: Cell,
@@ -135,27 +152,36 @@ impl Maze {
         })
     }
 
-    pub fn solution(&self) -> Vec<PieceId> {
-        let mut came_from: Vec<Option<PieceId>> = vec![None; self.pieces.len()];
-        let mut queue: VecDeque<PieceId> = self.pieces_in(self.start).iter().copied().collect();
-        let mut seen: HashSet<PieceId> = queue.iter().copied().collect();
+    pub fn routes_from(&self, sources: &[PieceId]) -> Routes {
+        let mut routes = Routes {
+            distances: vec![usize::MAX; self.pieces.len()],
+            came_from: vec![None; self.pieces.len()],
+        };
+        let mut queue: VecDeque<PieceId> = sources.iter().copied().collect();
+        for &source in sources {
+            routes.distances[source] = 0;
+        }
         while let Some(id) = queue.pop_front() {
-            if self.pieces[id].cell == self.finish {
-                let mut route = vec![id];
-                while let Some(before) = came_from[route[route.len() - 1]] {
-                    route.push(before);
-                }
-                route.reverse();
-                return route;
-            }
             for &(_, next) in &self.pieces[id].links {
-                if seen.insert(next) {
-                    came_from[next] = Some(id);
+                if routes.distances[next] == usize::MAX {
+                    routes.distances[next] = routes.distances[id] + 1;
+                    routes.came_from[next] = Some(id);
                     queue.push_back(next);
                 }
             }
         }
-        Vec::new()
+        routes
+    }
+
+    pub fn solution(&self) -> Vec<PieceId> {
+        let routes = self.routes_from(self.pieces_in(self.start));
+        self.pieces_in(self.finish)
+            .iter()
+            .copied()
+            .filter(|&id| routes.distances[id] != usize::MAX)
+            .min_by_key(|&id| routes.distances[id])
+            .map(|id| routes.route_to(id))
+            .unwrap_or_default()
     }
 
     pub fn check_step(&self, step: &Step) -> Result<(), StepError> {

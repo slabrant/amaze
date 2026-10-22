@@ -1,6 +1,5 @@
-use crate::grid::Cell;
-use crate::maze::{Content, Maze, PieceId};
-use std::collections::VecDeque;
+use crate::grid::{Cell, Grid};
+use crate::maze::{Content, Maze};
 
 pub const NEAR: usize = 3;
 pub const LONG_ROUTE: usize = 12;
@@ -26,7 +25,7 @@ pub fn measure(maze: &Maze) -> Measures {
         .copied()
         .filter(|&cell| maze.content(cell) != Content::Empty)
         .collect();
-    let near = near_solution(maze, &solution);
+    let near = near_solution(maze.grid, solution.iter().map(|&id| maze.piece(id).cell));
     let joins = zone_joins(maze);
     Measures {
         short_routes_between_neighbours: short_routes_between_neighbours(maze),
@@ -53,26 +52,9 @@ pub fn measure(maze: &Maze) -> Measures {
     }
 }
 
-pub fn route_distances(maze: &Maze, from: PieceId) -> Vec<usize> {
-    let mut distances = vec![usize::MAX; maze.pieces().len()];
-    distances[from] = 0;
-    let mut queue = VecDeque::from([from]);
-    while let Some(id) = queue.pop_front() {
-        for &(_, next) in &maze.piece(id).links {
-            if distances[next] == usize::MAX {
-                distances[next] = distances[id] + 1;
-                queue.push_back(next);
-            }
-        }
-    }
-    distances
-}
-
-pub fn near_solution(maze: &Maze, solution: &[PieceId]) -> Vec<bool> {
-    let grid = maze.grid;
+pub fn near_solution(grid: Grid, route: impl IntoIterator<Item = Cell>) -> Vec<bool> {
     let mut near = vec![false; grid.width * grid.height];
-    for &id in solution {
-        let on = maze.piece(id).cell;
+    for on in route {
         for y in on.y.saturating_sub(NEAR)..=(on.y + NEAR).min(grid.height - 1) {
             for x in on.x.saturating_sub(NEAR)..=(on.x + NEAR).min(grid.width - 1) {
                 let cell = Cell { x, y };
@@ -102,7 +84,7 @@ fn short_routes_between_neighbours(maze: &Maze) -> f64 {
     let mut pairs = 0;
     let mut short = 0;
     for (id, piece) in maze.pieces().iter().enumerate() {
-        let distances = route_distances(maze, id);
+        let distances = maze.routes_from(&[id]).distances;
         let beside = std::iter::once(piece.cell)
             .chain(maze.grid.neighbours(piece.cell).map(|(_, cell)| cell));
         for cell in beside {
