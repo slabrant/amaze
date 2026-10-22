@@ -1,4 +1,5 @@
 mod carving;
+mod goals;
 mod levels;
 mod loop_census;
 mod maze;
@@ -32,15 +33,15 @@ usage: amaze [options]
 
 options:
   -o, --out PATH      output PDF path (default maze.pdf)
-  --cols N            maze width in cells (default 36, or 18 at 4 per page)
-  --rows N            maze height in cells (default 45, or 22 at 4 per page)
+  --cols N            maze width in cells (default: Standard's)
+  --rows N            maze height in cells (default: Standard's)
   --zones N           zones the maze is split into, each with exactly one way
                       across to the next (default: picked at random, more on
                       bigger mazes)
   --count N           number of mazes (default 1)
   --per-page 1|4      mazes per page: 1, or 4 small ones in a 2x2 grid
-  --level NAME        size by level: trivial, easy, medium, hard,
-                      mini-trivial, mini-easy, mini-medium or mini-hard
+  --level NAME        size by level: trivial, easy, standard, hard,
+                      mini-trivial, mini-easy, mini-standard or mini-hard
                       (as in the book)
   --seed CODE         recreate a maze from the code printed beside it
   --solution          add solutions, all at the back
@@ -125,11 +126,11 @@ fn parse(argv: &[String]) -> Result<Args, String> {
 }
 
 fn run(a: Args) -> Result<(), String> {
-    let four_per_page = a.per_page == 4;
-    let level = a.level;
-    let cols = a.cols.or(level.map(|l| l.cols)).unwrap_or(if four_per_page { 18 } else { 36 });
-    let rows = a.rows.or(level.map(|l| l.rows)).unwrap_or(if four_per_page { 22 } else { 45 });
-    let zones_of_unresized_level = level.filter(|_| a.cols.is_none() && a.rows.is_none()).map(|l| l.zones);
+    let sized_by = a.level.unwrap_or_else(|| levels::standard(a.per_page));
+    let cols = a.cols.unwrap_or(sized_by.cols);
+    let rows = a.rows.unwrap_or(sized_by.rows);
+    let level = (a.cols.is_none() && a.rows.is_none()).then_some(sized_by);
+    let zones_of_unresized_level = level.map(|l| l.zones);
     let mut seed = a.seed.unwrap_or_else(seed_from_clock);
     let mut mazes = Vec::new();
     for i in 0..a.count {
@@ -156,12 +157,12 @@ fn run(a: Args) -> Result<(), String> {
         mazes.push((m, seed, route));
     }
     let numbered = a.count > 1;
-    let name = level.map_or("Maze", |l| l.label.as_str());
+    let name = level.map_or("Maze", |l| l.label);
     let label = |i: usize, answer: bool| match (numbered, answer) {
         (true, false) => format!("{name} {}", i + 1),
         (true, true) => format!("{name} {} solution", i + 1),
         (false, false) => level.map_or(String::new(), |l| l.label.to_string()),
-        (false, true) => format!("{} solution", level.map_or("Maze", |l| l.label.as_str())),
+        (false, true) => format!("{} solution", level.map_or("Maze", |l| l.label)),
     };
     let opts = render::Options {
         per_page: a.per_page,
@@ -215,10 +216,9 @@ struct BookSection {
 
 fn book_sections_in_page_order() -> Vec<BookSection> {
     let mut sections: Vec<BookSection> = levels::full_size()
-        .iter()
         .map(|l| BookSection { mazes_per_page: l.mazes_per_page, levels: vec![l; BOOK_MAZES_PER_FULL_SIZE_LEVEL] })
         .collect();
-    let minis_level_by_level = levels::minis().iter().flat_map(|l| vec![l; BOOK_MAZES_PER_MINI_LEVEL]).collect();
+    let minis_level_by_level = levels::minis().flat_map(|l| vec![l; BOOK_MAZES_PER_MINI_LEVEL]).collect();
     sections.push(BookSection { mazes_per_page: levels::MINI_MAZES_PER_PAGE, levels: minis_level_by_level });
     sections
 }
@@ -321,6 +321,7 @@ fn run_book(argv: &[String]) -> Result<(), String> {
 
 fn build_book_sizes_and_check_every_rule(first: u64, last: u64) -> bool {
     let mut failed = 0;
+    let mut goal_scores = goals::Scores::default();
     let mut all = loop_census::LoopCensus::default();
     let mut all_shapes = shape_census::ShapeCensus::default();
     for seed in first..last {
@@ -340,14 +341,17 @@ fn build_book_sizes_and_check_every_rule(first: u64, last: u64) -> bool {
         };
         let ms = t.elapsed().as_secs_f64() * 1000.0;
         let broken = rules::broken_rules(&m);
+        let scores = goals::score(&m);
+        goal_scores.add(&scores);
         let s = &m.stats;
         let census = loop_census::count_loops(&m);
         all.add(&census);
         all_shapes.add(&shape_census::count_shapes(&m));
         if broken.is_empty() {
             println!(
-                "{what}: ok  {:>3.0} ms  {} strand crossings, {} hops, {} rings, {} junctions, loops {} ({} around, {} across), layouts tried {}",
+                "{what}: ok  {:>3.0} ms  score {:.2}  {} strand crossings, {} hops, {} rings, {} junctions, loops {} ({} around, {} across), layouts tried {}",
                 ms,
+                scores.total(),
                 s.strand_crossings,
                 s.corridor_hops,
                 s.rings,
@@ -366,6 +370,12 @@ fn build_book_sizes_and_check_every_rule(first: u64, last: u64) -> bool {
         }
     }
     println!("{} of {} mazes passed", (last - first) as usize - failed, last - first);
+    let mazes = (last - first).max(1) as f64;
+    println!("goal scores, average over {} mazes:", last - first);
+    for (name, weight, score) in goal_scores.weighted() {
+        println!("  {name:<22} weight {:>5.3}  score {:.2}", weight, score / mazes);
+    }
+    println!("  {:<22} weighted total {:.3}", "", goal_scores.total() / mazes);
     let pct = |a: usize, b: usize| 100.0 * a as f64 / b.max(1) as f64;
     println!(
         "loops: {}; around another zone {:.0}%, only across one {:.0}%; links whose shortest loop wraps {:.0}%",

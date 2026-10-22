@@ -66,12 +66,12 @@ cargo build --release
 
 Each maze shows a four-character code (no look-alike letters: no I, L, O, 0
 or 1). Give it back with `--seed`, and the same size or `--level`, to make
-that maze again. Levels are `trivial`, `easy`, `medium`, `hard`, and
-`mini-trivial`, `mini-easy`, `mini-medium`, `mini-hard`: the sizes used in
+that maze again. Levels are `trivial`, `easy`, `standard`, `hard`, and
+`mini-trivial`, `mini-easy`, `mini-standard`, `mini-hard`: the sizes used in
 the book.
 
 `amaze book -o book.pdf` makes a whole book for double-sided printing: two
-each of Trivial, Easy, Medium and Hard, then twelve minis four to a page
+each of Trivial, Easy, Standard and Hard, then twelve minis four to a page
 (three each of the same levels, in turn), every page with its solutions on
 the back. Each level is four cells wider than the last (12 to 24), and each
 mini is sized like the full-size level one step up, shrunk to a quarter

@@ -195,6 +195,14 @@ impl Maze {
         self.open_walls[n] &= !(1 << opposite(d));
     }
 
+    pub fn is_solid(&self, c: usize) -> bool {
+        self.degree(c) == 0
+    }
+
+    pub fn cells_walked_between(&self, a: usize, b: usize) -> usize {
+        (a / self.cols).abs_diff(b / self.cols) + (a % self.cols).abs_diff(b % self.cols)
+    }
+
     pub fn degree(&self, c: usize) -> usize {
         self.open_walls[c].count_ones() as usize + self.bridged_to[c].len()
     }

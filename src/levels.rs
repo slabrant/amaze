@@ -1,10 +1,5 @@
-use std::sync::LazyLock;
-
-use crate::render::space_for_one_maze;
 use crate::seeded_rng::Rng;
 
-const NARROWEST_FULL_SIZE_WIDTH: usize = 12;
-const WIDTH_STEP_BETWEEN_LEVELS: usize = 4;
 pub const FULL_SIZE_MAZES_PER_PAGE: usize = 1;
 pub const MINI_MAZES_PER_PAGE: usize = 4;
 
@@ -22,118 +17,67 @@ impl ZoneCountRange {
 
 #[derive(Debug)]
 pub struct Level {
-    pub option_name: String,
-    pub label: String,
+    pub option_name: &'static str,
+    pub label: &'static str,
     pub cols: usize,
     pub rows: usize,
     pub zones: ZoneCountRange,
     pub mazes_per_page: usize,
 }
 
-struct Difficulty {
-    name: &'static str,
+const fn level(
+    option_name: &'static str,
     label: &'static str,
-    zones: ZoneCountRange,
-    mini_zones: ZoneCountRange,
+    cols: usize,
+    rows: usize,
+    fewest_zones: usize,
+    most_zones: usize,
+    mazes_per_page: usize,
+) -> Level {
+    Level { option_name, label, cols, rows, zones: ZoneCountRange { fewest: fewest_zones, most: most_zones }, mazes_per_page }
 }
 
-const fn zones(fewest: usize, most: usize) -> ZoneCountRange {
-    ZoneCountRange { fewest, most }
-}
+const FULL: usize = FULL_SIZE_MAZES_PER_PAGE;
+const MINI: usize = MINI_MAZES_PER_PAGE;
 
-const EASIEST_FIRST: [Difficulty; 4] = [
-    Difficulty { name: "trivial", label: "Trivial", zones: zones(2, 2), mini_zones: zones(1, 2) },
-    Difficulty { name: "easy", label: "Easy", zones: zones(3, 4), mini_zones: zones(3, 4) },
-    Difficulty { name: "medium", label: "Medium", zones: zones(3, 5), mini_zones: zones(3, 5) },
-    Difficulty { name: "hard", label: "Hard", zones: zones(4, 7), mini_zones: zones(4, 7) },
+pub static LEVELS: [Level; 8] = [
+    level("trivial", "Trivial", 12, 15, 2, 2, FULL),
+    level("easy", "Easy", 16, 20, 3, 4, FULL),
+    level("standard", "Standard", 20, 26, 3, 5, FULL),
+    level("hard", "Hard", 24, 31, 4, 7, FULL),
+    level("mini-trivial", "Mini Trivial", 8, 10, 1, 2, MINI),
+    level("mini-easy", "Mini Easy", 10, 13, 3, 4, MINI),
+    level("mini-standard", "Mini Standard", 12, 15, 3, 5, MINI),
+    level("mini-hard", "Mini Hard", 13, 16, 4, 7, MINI),
 ];
 
-fn cell_size(cols: usize, per_page: usize) -> f64 {
-    space_for_one_maze(per_page).width / cols as f64
+pub fn full_size() -> impl Iterator<Item = &'static Level> {
+    LEVELS.iter().filter(|l| l.mazes_per_page == FULL)
 }
 
-fn rows_filling_the_space(cols: usize, per_page: usize) -> usize {
-    (space_for_one_maze(per_page).height / cell_size(cols, per_page)) as usize
-}
-
-fn cols_giving_nearest_cell_size(wanted: f64, per_page: usize) -> usize {
-    let off_by = |cols: usize| (cell_size(cols, per_page) - wanted).abs();
-    (1..=space_for_one_maze(per_page).width as usize).min_by(|&a, &b| off_by(a).total_cmp(&off_by(b))).unwrap()
-}
-
-fn full_size_width(step: usize) -> usize {
-    NARROWEST_FULL_SIZE_WIDTH + step * WIDTH_STEP_BETWEEN_LEVELS
-}
-
-fn ladder() -> Vec<Level> {
-    let full_size = EASIEST_FIRST.iter().enumerate().map(|(step, d)| {
-        let cols = full_size_width(step);
-        Level {
-            option_name: d.name.to_string(),
-            label: d.label.to_string(),
-            cols,
-            rows: rows_filling_the_space(cols, FULL_SIZE_MAZES_PER_PAGE),
-            zones: d.zones,
-            mazes_per_page: FULL_SIZE_MAZES_PER_PAGE,
-        }
-    });
-    let minis_sized_like_the_full_size_level_one_step_up = EASIEST_FIRST.iter().enumerate().map(|(step, d)| {
-        let cells_of_next_level_up = cell_size(full_size_width(step + 1), FULL_SIZE_MAZES_PER_PAGE);
-        let cols = cols_giving_nearest_cell_size(cells_of_next_level_up, MINI_MAZES_PER_PAGE);
-        Level {
-            option_name: format!("mini-{}", d.name),
-            label: format!("Mini {}", d.label),
-            cols,
-            rows: rows_filling_the_space(cols, MINI_MAZES_PER_PAGE),
-            zones: d.mini_zones,
-            mazes_per_page: MINI_MAZES_PER_PAGE,
-        }
-    });
-    full_size.chain(minis_sized_like_the_full_size_level_one_step_up).collect()
-}
-
-pub static LEVELS: LazyLock<Vec<Level>> = LazyLock::new(ladder);
-
-pub fn full_size() -> &'static [Level] {
-    &LEVELS[..EASIEST_FIRST.len()]
-}
-
-pub fn minis() -> &'static [Level] {
-    &LEVELS[EASIEST_FIRST.len()..]
+pub fn minis() -> impl Iterator<Item = &'static Level> {
+    LEVELS.iter().filter(|l| l.mazes_per_page == MINI)
 }
 
 pub fn named(option_name: &str) -> Option<&'static Level> {
     LEVELS.iter().find(|l| l.option_name == option_name.to_lowercase())
 }
 
+pub fn standard(mazes_per_page: usize) -> &'static Level {
+    named(if mazes_per_page == MINI { "mini-standard" } else { "standard" }).unwrap()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::render::space_for_one_maze;
 
     #[test]
-    fn ladder_sizes() {
-        let sizes: Vec<(&str, usize, usize)> = LEVELS.iter().map(|l| (l.label.as_str(), l.cols, l.rows)).collect();
-        assert_eq!(
-            sizes,
-            [
-                ("Trivial", 12, 15),
-                ("Easy", 16, 20),
-                ("Medium", 20, 26),
-                ("Hard", 24, 31),
-                ("Mini Trivial", 8, 10),
-                ("Mini Easy", 10, 13),
-                ("Mini Medium", 12, 15),
-                ("Mini Hard", 13, 16),
-            ]
-        );
-    }
-
-    #[test]
-    fn mini_cells_print_within_five_percent_of_the_next_level_up() {
-        for (step, mini) in minis().iter().enumerate() {
-            let wanted = cell_size(full_size_width(step + 1), FULL_SIZE_MAZES_PER_PAGE);
-            let got = cell_size(mini.cols, MINI_MAZES_PER_PAGE);
-            assert!((got - wanted).abs() / wanted < 0.05, "{}: {got} vs {wanted}", mini.label);
+    fn every_level_fills_its_space_on_the_page_with_square_cells() {
+        for l in &LEVELS {
+            let space = space_for_one_maze(l.mazes_per_page);
+            let cell = space.width / l.cols as f64;
+            assert_eq!(l.rows, (space.height / cell) as usize, "{}", l.label);
         }
     }
 }

@@ -573,11 +573,13 @@ fn page_grid(per_page: usize) -> PageGrid {
     }
 }
 
+#[cfg(test)]
 pub struct SpaceForMaze {
     pub width: f64,
     pub height: f64,
 }
 
+#[cfg(test)]
 pub fn space_for_one_maze(per_page: usize) -> SpaceForMaze {
     let grid = page_grid(per_page);
     SpaceForMaze { width: grid.box_width, height: grid.box_height - grid.font * CAPTION_LINES_OF_SPACE }
