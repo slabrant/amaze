@@ -250,16 +250,7 @@ fn foreign_share(counts: &[Vec<usize>], at: usize, zone: usize) -> f64 {
 fn mixing(maze: &Maze, counts: &[Vec<usize>], step: &Step) -> f64 {
     step.cells
         .iter()
-        .map(|c| {
-            let here = &counts[maze.grid.index(c.cell)];
-            let all: usize = here.iter().sum();
-            let own = here.get(step.zone).copied().unwrap_or(0);
-            if all == 0 {
-                0.5
-            } else {
-                1.0 - own as f64 / all as f64
-            }
-        })
+        .map(|c| foreign_share(counts, maze.grid.index(c.cell), step.zone))
         .sum()
 }
 

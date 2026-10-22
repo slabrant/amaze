@@ -58,3 +58,14 @@ filled. If a zone cannot be started, generation fails.
 
 - A book: Trivial, Easy, Standard, Hard, and small mazes four to a page.
 - Each solution is printed mirrored on the back of its page.
+
+## Exceptions
+
+Places where generation treats something differently from the rest.
+
+- A step that starts a zone is picked from more tries than other steps, and its search always runs the full length.
+- The step that starts the last zone is pulled towards the start, so the finish can be near it.
+- The finish is any cell of the last zone nearly as near the start as the nearest one; of those, the one with the longest solution.
+- Start and finish cells are never made into crossings.
+- The book retries a maze that fails with another seed, and every maze has at least two zones.
+- Grids smaller than 4 by 4 are refused.
