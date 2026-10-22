@@ -6,6 +6,7 @@ pub type PieceId = usize;
 #[derive(Clone, Debug)]
 pub struct Piece {
     pub cell: Cell,
+    pub zone: usize,
     pub links: Vec<(Dir, PieceId)>,
 }
 
@@ -34,6 +35,7 @@ pub struct Step {
     pub from: PieceId,
     pub cells: Vec<StepCell>,
     pub to: PieceId,
+    pub zone: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -45,6 +47,7 @@ pub enum StepError {
     CellTaken,
     EndNotJoinable,
     SideTaken,
+    WrongZone,
 }
 
 #[derive(Clone, Debug)]
@@ -52,6 +55,7 @@ pub struct Maze {
     pub grid: Grid,
     pub start: Cell,
     pub finish: Cell,
+    zones: usize,
     pieces: Vec<Piece>,
     layers: Vec<Vec<PieceId>>,
 }
@@ -71,12 +75,13 @@ impl Maze {
             grid,
             start: cells[0],
             finish: cells[0],
+            zones: 1,
             pieces: Vec::new(),
             layers: vec![Vec::new(); grid.width * grid.height],
         };
         let ids: Vec<PieceId> = cells
             .iter()
-            .map(|&cell| maze.add_piece(cell, true))
+            .map(|&cell| maze.add_piece(cell, 0, true))
             .collect();
         for (i, &id) in ids.iter().enumerate() {
             let next = ids[(i + 1) % ids.len()];
@@ -86,6 +91,10 @@ impl Maze {
             maze.link(id, next);
         }
         Ok(maze)
+    }
+
+    pub fn zones(&self) -> usize {
+        self.zones
     }
 
     pub fn pieces(&self) -> &[Piece] {
@@ -159,6 +168,17 @@ impl Maze {
         if from.has_side(out) || to.has_side(back) || (step.from == step.to && out == back) {
             return Err(StepError::SideTaken);
         }
+        let starts_zone = step.zone == self.zones;
+        let zone_fits = if starts_zone {
+            step.from == step.to
+                && from.zone + 1 == step.zone
+                && self.content(from.cell) == Content::Path
+        } else {
+            from.zone == step.zone && to.zone == step.zone
+        };
+        if !zone_fits {
+            return Err(StepError::WrongZone);
+        }
         Ok(())
     }
 
@@ -167,20 +187,22 @@ impl Maze {
         let ids: Vec<PieceId> = step
             .cells
             .iter()
-            .map(|c| self.add_piece(c.cell, c.on_top))
+            .map(|c| self.add_piece(c.cell, step.zone, c.on_top))
             .collect();
         for pair in ids.windows(2) {
             self.link(pair[0], pair[1]);
         }
         self.link(step.from, ids[0]);
         self.link(ids[ids.len() - 1], step.to);
+        self.zones = self.zones.max(step.zone + 1);
         Ok(())
     }
 
-    fn add_piece(&mut self, cell: Cell, on_top: bool) -> PieceId {
+    fn add_piece(&mut self, cell: Cell, zone: usize, on_top: bool) -> PieceId {
         let id = self.pieces.len();
         self.pieces.push(Piece {
             cell,
+            zone,
             links: Vec::new(),
         });
         let layer = &mut self.layers[self.grid.index(cell)];
@@ -261,12 +283,14 @@ mod tests {
                 cell(3, 2),
             ]),
             to: id_at(&maze, cell(2, 3)),
+            zone: 0,
         };
         assert_eq!(maze.check_step(&step), Err(StepError::NotNeighbours));
         let step = Step {
             from: id_at(&maze, cell(2, 1)),
             cells: over(&[cell(2, 2)]),
             to: id_at(&maze, cell(2, 3)),
+            zone: 0,
         };
         maze.make_step(&step).unwrap();
         assert_eq!(maze.content(cell(2, 1)), Content::Junction);
@@ -281,6 +305,7 @@ mod tests {
             from: id_at(&maze, cell(1, 1)),
             cells: over(&[cell(0, 1), cell(0, 2), cell(1, 2), cell(2, 2)]),
             to: id_at(&maze, cell(3, 2)),
+            zone: 0,
         };
         maze.make_step(&step).unwrap();
         assert_eq!(maze.content(cell(1, 2)), Content::Crossing);
@@ -293,18 +318,21 @@ mod tests {
             from: id_at(&maze, cell(1, 1)),
             cells: over(&[cell(0, 1), cell(0, 2), cell(1, 2), cell(2, 2)]),
             to: id_at(&maze, cell(3, 2)),
+            zone: 0,
         };
         maze.make_step(&step).unwrap();
         let across_crossing = Step {
             from: id_at(&maze, cell(1, 3)),
             cells: over(&[cell(1, 2)]),
             to: id_at(&maze, cell(1, 1)),
+            zone: 0,
         };
         assert_eq!(maze.check_step(&across_crossing), Err(StepError::CellTaken));
         let across_junction = Step {
             from: id_at(&maze, cell(3, 3)),
             cells: over(&[cell(4, 3), cell(4, 2), cell(3, 2), cell(3, 1)]),
             to: id_at(&maze, cell(2, 1)),
+            zone: 0,
         };
         assert_eq!(maze.check_step(&across_junction), Err(StepError::CellTaken));
     }
@@ -316,12 +344,14 @@ mod tests {
             from: id_at(&maze, cell(1, 1)),
             cells: over(&[cell(0, 1), cell(0, 2), cell(1, 2), cell(2, 2)]),
             to: id_at(&maze, cell(3, 2)),
+            zone: 0,
         };
         maze.make_step(&step).unwrap();
         let onto_crossing = Step {
             from: id_at(&maze, cell(1, 3)),
             cells: over(&[cell(0, 3)]),
             to: id_at(&maze, cell(1, 2)),
+            zone: 0,
         };
         assert_eq!(
             maze.check_step(&onto_crossing),
@@ -336,19 +366,67 @@ mod tests {
             from: id_at(&maze, cell(1, 1)),
             cells: over(&[cell(2, 1)]),
             to: id_at(&maze, cell(3, 1)),
+            zone: 0,
         };
         assert_eq!(maze.check_step(&step), Err(StepError::SideTaken));
         let step = Step {
             from: id_at(&maze, cell(2, 1)),
             cells: over(&[cell(2, 0), cell(1, 0), cell(0, 0), cell(0, 1)]),
             to: id_at(&maze, cell(1, 1)),
+            zone: 0,
         };
         assert_eq!(maze.check_step(&step), Ok(()));
         let step = Step {
             from: id_at(&maze, cell(2, 1)),
             cells: over(&[cell(2, 2)]),
             to: id_at(&maze, cell(2, 1)),
+            zone: 0,
         };
         assert_eq!(maze.check_step(&step), Err(StepError::SideTaken));
+    }
+
+    #[test]
+    fn new_zone_starts_from_one_cell_of_the_last_zone() {
+        let mut maze = square();
+        let from = id_at(&maze, cell(2, 1));
+        let loop_off = over(&[
+            cell(2, 0),
+            cell(1, 0),
+            cell(0, 0),
+            cell(0, 1),
+            cell(0, 2),
+            cell(1, 2),
+            cell(2, 2),
+        ]);
+        let into_new_zone = Step {
+            from,
+            cells: loop_off[..4].to_vec(),
+            to: id_at(&maze, cell(1, 1)),
+            zone: 1,
+        };
+        assert_eq!(maze.check_step(&into_new_zone), Err(StepError::WrongZone));
+        let skipping_a_zone = Step {
+            from,
+            cells: loop_off.clone(),
+            to: from,
+            zone: 2,
+        };
+        assert_eq!(maze.check_step(&skipping_a_zone), Err(StepError::WrongZone));
+        let new_zone = Step {
+            from,
+            cells: loop_off,
+            to: from,
+            zone: 1,
+        };
+        maze.make_step(&new_zone).unwrap();
+        assert_eq!(maze.zones(), 2);
+        assert_eq!(maze.content(cell(2, 1)), Content::Junction);
+        let across_zones = Step {
+            from: id_at(&maze, cell(0, 2)),
+            cells: over(&[cell(0, 3)]),
+            to: id_at(&maze, cell(1, 3)),
+            zone: 1,
+        };
+        assert_eq!(maze.check_step(&across_zones), Err(StepError::WrongZone));
     }
 }

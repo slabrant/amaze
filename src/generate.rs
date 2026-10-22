@@ -3,30 +3,60 @@ use crate::maze::{Content, Maze, PieceId, Step, StepCell};
 use rand::prelude::*;
 
 const ATTEMPTS: usize = 1000;
+const CANDIDATES: usize = 20;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Failed;
 
-pub fn generate(grid: Grid, seed: u64, steps: usize) -> Result<Maze, Failed> {
-    if grid.width < 2 || grid.height < 2 {
+pub fn generate(grid: Grid, seed: u64, zones: usize, steps: usize) -> Result<Maze, Failed> {
+    if grid.width < 2 || grid.height < 2 || zones == 0 {
         return Err(Failed);
     }
     let mut rng = StdRng::seed_from_u64(seed);
     let mut maze = Maze::with_loop(grid, &first_loop(grid, &mut rng)).map_err(|_| Failed)?;
-    for _ in 0..steps {
-        let step = (0..ATTEMPTS)
-            .find_map(|_| find_step(&maze, &mut rng))
-            .ok_or(Failed)?;
-        maze.make_step(&step).map_err(|_| Failed)?;
+    for zone in 1..zones {
+        make_step(&mut maze, &mut rng, |_| zone)?;
     }
-    let path_cells: Vec<Cell> = grid
-        .cells()
-        .filter(|&cell| maze.content(cell) == Content::Path)
-        .collect();
-    let [start, finish] = path_cells.sample_array(&mut rng).ok_or(Failed)?;
-    maze.start = start;
-    maze.finish = finish;
+    for _ in 0..steps {
+        make_step(&mut maze, &mut rng, |rng| rng.random_range(0..zones))?;
+    }
+    maze.start = *path_cells(&maze, 0).choose(&mut rng).ok_or(Failed)?;
+    maze.finish = *path_cells(&maze, zones - 1)
+        .choose(&mut rng)
+        .ok_or(Failed)?;
     Ok(maze)
+}
+
+fn make_step(
+    maze: &mut Maze,
+    rng: &mut StdRng,
+    pick_zone: impl Fn(&mut StdRng) -> usize,
+) -> Result<(), Failed> {
+    let step = (0..ATTEMPTS)
+        .filter_map(|_| {
+            let zone = pick_zone(rng);
+            find_step(maze, rng, zone)
+        })
+        .take(CANDIDATES)
+        .max_by_key(|step| empty_cells_filled(maze, step))
+        .ok_or(Failed)?;
+    maze.make_step(&step).map_err(|_| Failed)
+}
+
+fn empty_cells_filled(maze: &Maze, step: &Step) -> usize {
+    step.cells
+        .iter()
+        .filter(|c| maze.content(c.cell) == Content::Empty)
+        .count()
+}
+
+fn path_cells(maze: &Maze, zone: usize) -> Vec<Cell> {
+    maze.grid
+        .cells()
+        .filter(|&cell| {
+            maze.content(cell) == Content::Path && maze.piece(maze.pieces_in(cell)[0]).zone == zone
+        })
+        .collect()
 }
 
 fn first_loop(grid: Grid, rng: &mut StdRng) -> Vec<Cell> {
@@ -44,11 +74,18 @@ fn first_loop(grid: Grid, rng: &mut StdRng) -> Vec<Cell> {
         .collect()
 }
 
-fn open_sides(maze: &Maze) -> Vec<(PieceId, Dir)> {
+fn open_sides(maze: &Maze, zone: usize) -> Vec<(PieceId, Dir)> {
+    let starts_zone = zone == maze.zones();
+    let from_zone = if starts_zone { zone - 1 } else { zone };
     maze.pieces()
         .iter()
         .enumerate()
-        .filter(|(_, piece)| maze.pieces_in(piece.cell).len() == 1)
+        .filter(|(_, piece)| piece.zone == from_zone)
+        .filter(|(_, piece)| match maze.content(piece.cell) {
+            Content::Path => true,
+            Content::Junction => !starts_zone,
+            Content::Empty | Content::Crossing => false,
+        })
         .flat_map(|(id, piece)| {
             maze.grid
                 .neighbours(piece.cell)
@@ -62,9 +99,9 @@ fn can_enter(maze: &Maze, cell: Cell) -> bool {
     matches!(maze.content(cell), Content::Empty | Content::Path)
 }
 
-fn find_step(maze: &Maze, rng: &mut StdRng) -> Option<Step> {
+fn find_step(maze: &Maze, rng: &mut StdRng, zone: usize) -> Option<Step> {
     let grid = maze.grid;
-    let &(from, out) = open_sides(maze).choose(rng)?;
+    let &(from, out) = open_sides(maze, zone).choose(rng)?;
     let from_cell = maze.piece(from).cell;
     let first = grid
         .neighbour(from_cell, out)
@@ -83,6 +120,7 @@ fn find_step(maze: &Maze, rng: &mut StdRng) -> Option<Step> {
                     from,
                     cells: cells.clone(),
                     to,
+                    zone,
                 };
                 if maze.check_step(&step).is_ok() {
                     longest = Some(step);
@@ -124,14 +162,15 @@ mod tests {
     #[test]
     fn generated_mazes_keep_the_rules() {
         for seed in 0..20 {
-            let maze = generate(GRID, seed, 30).unwrap();
+            let maze = generate(GRID, seed, 3, 20).unwrap();
             assert_eq!(broken(&maze), vec![], "seed {seed}");
         }
     }
 
     #[test]
     fn generated_mazes_have_crossings_and_junctions() {
-        let maze = generate(GRID, 1, 30).unwrap();
+        let maze = generate(GRID, 1, 3, 20).unwrap();
+        assert_eq!(maze.zones(), 3);
         let contents: Vec<Content> = GRID.cells().map(|cell| maze.content(cell)).collect();
         assert!(contents.contains(&Content::Crossing));
         assert!(contents.contains(&Content::Junction));
@@ -139,8 +178,8 @@ mod tests {
 
     #[test]
     fn same_seed_same_maze() {
-        let a = generate(GRID, 7, 30).unwrap();
-        let b = generate(GRID, 7, 30).unwrap();
+        let a = generate(GRID, 7, 3, 20).unwrap();
+        let b = generate(GRID, 7, 3, 20).unwrap();
         assert_eq!(render(&a), render(&b));
     }
 
@@ -149,7 +188,7 @@ mod tests {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/svg");
         std::fs::create_dir_all(&dir).unwrap();
         for seed in 0..4 {
-            let maze = generate(GRID, seed, 30).unwrap();
+            let maze = generate(GRID, seed, 3, 20).unwrap();
             std::fs::write(dir.join(format!("maze-{seed}.svg")), render(&maze)).unwrap();
         }
     }
