@@ -1,10 +1,19 @@
+use crate::goals::{LONG_ROUTE, near_solution, route_distances};
 use crate::grid::{Cell, Dir, Grid};
 use crate::maze::{Content, Maze, PieceId, Step, StepCell};
 use rand::prelude::*;
 
 const ATTEMPTS: usize = 1000;
 const ZONE_START_ATTEMPTS: usize = 20_000;
-const CANDIDATES: usize = 20;
+const CANDIDATES: usize = 40;
+const ZONE_START_CANDIDATES: usize = 200;
+const NEAR_ENDS: usize = 8;
+
+const SHORT_ROUTE_WEIGHT: f64 = 5.0;
+const NEAR_SOLUTION_WEIGHT: f64 = 100.0;
+const CROSSING_WEIGHT: f64 = 1.0;
+const CROSSING_IN_A_ROW_WEIGHT: f64 = 1.0;
+const EMPTY_CELL_WEIGHT: f64 = 0.5;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Failed;
@@ -15,10 +24,18 @@ pub fn generate(grid: Grid, seed: u64, zones: usize) -> Result<Maze, Failed> {
     }
     let mut rng = StdRng::seed_from_u64(seed);
     let mut maze = Maze::with_loop(grid, &first_loop(grid, &mut rng)).map_err(|_| Failed)?;
+    maze.start = *path_cells_in_zone(&maze, 0)
+        .choose(&mut rng)
+        .ok_or(Failed)?;
+    let mut entry = maze.pieces_in(maze.start)[0];
     for zone in 1..zones {
-        let step = best_step(&maze, &mut rng, zone, ZONE_START_ATTEMPTS).ok_or(Failed)?;
+        let step = candidates(&maze, &mut rng, zone, ZONE_START_ATTEMPTS)
+            .max_by_key(|step| zone_start_score(&maze, entry, step))
+            .ok_or(Failed)?;
+        entry = step.from;
         maze.make_step(&step).map_err(|_| Failed)?;
     }
+    place_finish(&mut maze, zones)?;
     let mut turns: Vec<usize> = (0..zones).collect();
     loop {
         turns.shuffle(&mut rng);
@@ -30,7 +47,7 @@ pub fn generate(grid: Grid, seed: u64, zones: usize) -> Result<Maze, Failed> {
         });
         let mut stepped = false;
         for &zone in &turns {
-            if let Some(step) = best_step(&maze, &mut rng, zone, ATTEMPTS) {
+            if let Some(step) = best_step(&maze, &mut rng, zone) {
                 maze.make_step(&step).map_err(|_| Failed)?;
                 stepped = true;
             }
@@ -39,45 +56,130 @@ pub fn generate(grid: Grid, seed: u64, zones: usize) -> Result<Maze, Failed> {
             break;
         }
     }
-    let finishes = cells_in_zone(&maze, zones - 1);
-    let pairs: Vec<(Cell, Cell)> = cells_in_zone(&maze, 0)
-        .into_iter()
-        .flat_map(|start| finishes.iter().map(move |&finish| (start, finish)))
-        .collect();
-    let nearest = pairs
-        .iter()
-        .map(|&(start, finish)| start.squared_distance(finish))
-        .min()
-        .ok_or(Failed)?;
-    let nearest_pairs: Vec<(Cell, Cell)> = pairs
-        .into_iter()
-        .filter(|&(start, finish)| start.squared_distance(finish) == nearest)
-        .collect();
-    (maze.start, maze.finish) = *nearest_pairs.choose(&mut rng).ok_or(Failed)?;
     Ok(maze)
 }
 
-fn best_step(maze: &Maze, rng: &mut StdRng, zone: usize, attempts: usize) -> Option<Step> {
+fn candidates<'a>(
+    maze: &'a Maze,
+    rng: &'a mut StdRng,
+    zone: usize,
+    attempts: usize,
+) -> impl Iterator<Item = Step> + 'a {
+    let wanted = if zone == maze.zones() {
+        ZONE_START_CANDIDATES
+    } else {
+        CANDIDATES
+    };
     (0..attempts)
-        .filter_map(|_| find_step(maze, rng, zone))
-        .take(CANDIDATES)
-        .max_by_key(|step| empty_cells_filled(maze, step))
+        .filter_map(move |_| find_step(maze, rng, zone))
+        .take(wanted)
 }
 
-fn empty_cells_filled(maze: &Maze, step: &Step) -> usize {
-    step.cells
+fn zone_start_score(maze: &Maze, entry: PieceId, step: &Step) -> usize {
+    let route = route_distances(maze, entry)[step.from];
+    let crow = maze
+        .piece(entry)
+        .cell
+        .squared_distance(maze.piece(step.from).cell);
+    2 * route + (crow as f64).sqrt() as usize + step.cells.len()
+}
+
+fn place_finish(maze: &mut Maze, zones: usize) -> Result<(), Failed> {
+    let finishes: Vec<Cell> = path_cells_in_zone(maze, zones - 1)
+        .into_iter()
+        .filter(|&finish| finish != maze.start)
+        .collect();
+    let nearest = finishes
         .iter()
-        .filter(|c| maze.content(c.cell) == Content::Empty)
-        .count()
+        .map(|finish| finish.squared_distance(maze.start))
+        .min()
+        .ok_or(Failed)?;
+    let mut longest = 0;
+    let mut best = maze.finish;
+    for finish in finishes {
+        if finish.squared_distance(maze.start) > nearest.max(NEAR_ENDS) {
+            continue;
+        }
+        maze.finish = finish;
+        let length = maze.solution().len();
+        if length > longest {
+            longest = length;
+            best = finish;
+        }
+    }
+    maze.finish = best;
+    Ok(())
 }
 
-fn cells_in_zone(maze: &Maze, zone: usize) -> Vec<Cell> {
+fn path_cells_in_zone(maze: &Maze, zone: usize) -> Vec<Cell> {
     maze.grid
         .cells()
         .filter(|&cell| {
-            maze.pieces_in(cell).len() == 1 && maze.piece(maze.pieces_in(cell)[0]).zone == zone
+            maze.content(cell) == Content::Path && maze.piece(maze.pieces_in(cell)[0]).zone == zone
         })
         .collect()
+}
+
+fn best_step(maze: &Maze, rng: &mut StdRng, zone: usize) -> Option<Step> {
+    candidates(maze, rng, zone, ATTEMPTS)
+        .map(|step| (step_score(maze, &step), step))
+        .max_by(|a, b| a.0.total_cmp(&b.0))
+        .map(|(_, step)| step)
+}
+
+fn step_score(maze: &Maze, step: &Step) -> f64 {
+    let mut after = maze.clone();
+    if after.make_step(step).is_err() {
+        return f64::MIN;
+    }
+    let near = near_solution(&after, &after.solution());
+    let near_fraction = near.iter().filter(|&&is_near| is_near).count() as f64 / near.len() as f64;
+    let is_crossing = |c: &StepCell| maze.content(c.cell) == Content::Path;
+    let crossings = step.cells.iter().filter(|c| is_crossing(c)).count();
+    let crossings_in_a_row = step
+        .cells
+        .windows(2)
+        .filter(|pair| is_crossing(&pair[0]) && is_crossing(&pair[1]))
+        .count();
+    let empty_cells = step
+        .cells
+        .iter()
+        .filter(|c| maze.content(c.cell) == Content::Empty)
+        .count();
+    NEAR_SOLUTION_WEIGHT * near_fraction - SHORT_ROUTE_WEIGHT * short_route_shortfall(maze, step)
+        + CROSSING_WEIGHT * crossings as f64
+        + CROSSING_IN_A_ROW_WEIGHT * crossings_in_a_row as f64
+        + EMPTY_CELL_WEIGHT * empty_cells as f64
+}
+
+fn short_route_shortfall(maze: &Maze, step: &Step) -> f64 {
+    let from_start = route_distances(maze, step.from);
+    let from_end = route_distances(maze, step.to);
+    let length = step.cells.len();
+    let mut shortfall = 0;
+    for (i, c) in step.cells.iter().enumerate() {
+        let beside =
+            std::iter::once(c.cell).chain(maze.grid.neighbours(c.cell).map(|(_, cell)| cell));
+        for cell in beside {
+            for &other in maze.pieces_in(cell) {
+                let joined =
+                    (i == 0 && other == step.from) || (i + 1 == length && other == step.to);
+                if joined {
+                    continue;
+                }
+                let route = (i + 1)
+                    .saturating_add(from_start[other])
+                    .min((length - i).saturating_add(from_end[other]));
+                shortfall += LONG_ROUTE.saturating_sub(route);
+            }
+            for (j, later) in step.cells.iter().enumerate().skip(i + 2) {
+                if later.cell == cell {
+                    shortfall += LONG_ROUTE.saturating_sub(j - i);
+                }
+            }
+        }
+    }
+    shortfall as f64 / length as f64
 }
 
 fn first_loop(grid: Grid, rng: &mut StdRng) -> Vec<Cell> {
@@ -117,6 +219,9 @@ fn open_sides(maze: &Maze, zone: usize) -> Vec<(PieceId, Dir)> {
 }
 
 fn can_enter(maze: &Maze, cell: Cell) -> bool {
+    if cell == maze.start || cell == maze.finish {
+        return false;
+    }
     match maze.pieces_in(cell) {
         [] => true,
         [crossed] => maze.piece(*crossed).is_straight(),
@@ -144,7 +249,11 @@ fn find_step(maze: &Maze, rng: &mut StdRng, zone: usize) -> Option<Step> {
         on_top: rng.random_bool(0.5),
     }];
     let mut heading = out;
-    let limit = rng.random_range(1..=grid.width * grid.height);
+    let limit = if zone == maze.zones() {
+        grid.width * grid.height
+    } else {
+        rng.random_range(1..=grid.width * grid.height)
+    };
     let mut longest = None;
     loop {
         let here = cells[cells.len() - 1].cell;
@@ -243,6 +352,14 @@ mod tests {
             let zones: Vec<usize> = solution.iter().map(|&id| maze.piece(id).zone).collect();
             assert!(zones.windows(2).all(|pair| pair[1] <= pair[0] + 1));
             assert_eq!(zones.iter().max(), Some(&2));
+        }
+    }
+
+    #[test]
+    fn prints_goal_measures() {
+        for seed in 0..5 {
+            let maze = generate(GRID, seed, 3).unwrap();
+            println!("seed {seed} {:?}", crate::goals::measure(&maze));
         }
     }
 
