@@ -8,6 +8,7 @@ const ATTEMPTS: usize = 1000;
 const ZONE_START_ATTEMPTS: usize = 20_000;
 const CANDIDATES: usize = 40;
 const ALWAYS_SOME: f64 = 0.2;
+const JOIN_ROUTE_WEIGHT: f64 = 0.5;
 const FIRST_LOOP_SHARE: f64 = 0.35;
 const BUMP_ATTEMPTS: usize = 100_000;
 const SHARE_WEIGHT: f64 = 1000.0;
@@ -90,7 +91,7 @@ fn zone_start_score(maze: &Maze, entry: PieceId, step: &Step, last: bool) -> f64
     } else {
         0.0
     };
-    (2 * route + step.cells.len()) as f64 + (crow as f64).sqrt() - finish_away
+    JOIN_ROUTE_WEIGHT * route as f64 + step.cells.len() as f64 + (crow as f64).sqrt() - finish_away
 }
 
 fn place_finish(maze: &mut Maze, zones: usize) -> Result<(), Failed> {
