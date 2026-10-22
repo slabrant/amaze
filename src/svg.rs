@@ -1,128 +1,124 @@
-use crate::grid::{Cell, Dir};
-use crate::maze::{Maze, PieceId};
+use crate::drawing::{Colour, Mark, draw, draw_solution, draw_zones};
+use crate::maze::Maze;
 use std::fmt::Write;
 
 const CELL: f64 = 20.0;
-const PATH: f64 = 9.0;
-const EDGE: f64 = 1.5;
-const GAP: f64 = 2.5;
-const MARK: f64 = 3.0;
+
+const ZONE_COLOURS: [Colour; 5] = [
+    Colour {
+        red: 0.84,
+        green: 0.16,
+        blue: 0.16,
+    },
+    Colour {
+        red: 0.16,
+        green: 0.62,
+        blue: 0.56,
+    },
+    Colour {
+        red: 0.23,
+        green: 0.36,
+        blue: 0.85,
+    },
+    Colour {
+        red: 0.96,
+        green: 0.64,
+        blue: 0.38,
+    },
+    Colour {
+        red: 0.51,
+        green: 0.22,
+        blue: 0.93,
+    },
+];
 
 pub fn render(maze: &Maze) -> String {
+    svg(maze, &draw(maze))
+}
+
+pub fn render_solution(maze: &Maze) -> String {
+    svg(
+        maze,
+        &draw_solution(
+            maze,
+            Colour {
+                red: 1.0,
+                green: 0.0,
+                blue: 0.0,
+            },
+        ),
+    )
+}
+
+pub fn render_zones(maze: &Maze) -> String {
+    svg(maze, &draw_zones(maze, &ZONE_COLOURS))
+}
+
+fn svg(maze: &Maze, marks: &[Mark]) -> String {
     let width = maze.grid.width as f64 * CELL;
     let height = maze.grid.height as f64 * CELL;
     let mut svg = format!(
         r#"<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}"><rect width="100%" height="100%" fill="white"/>"#
     );
-    let lower: String = maze
-        .grid
-        .cells()
-        .filter_map(|cell| maze.pieces_in(cell).first())
-        .map(|&id| outline(maze, id))
-        .collect();
-    stroke(&mut svg, &lower, "black", PATH);
-    stroke(&mut svg, &lower, "white", PATH - 2.0 * EDGE);
-    for cell in maze.grid.cells() {
-        if let [_, top] = maze.pieces_in(cell) {
-            let upper = outline(maze, *top);
-            stroke(&mut svg, &upper, "white", PATH + 2.0 * GAP);
-            stroke(&mut svg, &upper, "black", PATH);
-            stroke(&mut svg, &upper, "white", PATH - 2.0 * EDGE);
+    for mark in marks {
+        match mark.moved(CELL, |(x, y)| (x * CELL, y * CELL)) {
+            Mark::Lines {
+                lines,
+                width,
+                colour,
+            } => {
+                let d: String = lines
+                    .iter()
+                    .map(|line| {
+                        line.iter()
+                            .enumerate()
+                            .map(|(i, (x, y))| format!("{}{x} {y}", if i == 0 { 'M' } else { 'L' }))
+                            .collect::<String>()
+                    })
+                    .collect();
+                write!(
+                    svg,
+                    r#"<path d="{d}" fill="none" stroke="{}" stroke-width="{width}" stroke-linejoin="round"/>"#,
+                    hex(colour)
+                )
+                .unwrap();
+            }
+            Mark::Disc {
+                centre: (x, y),
+                radius,
+                colour,
+            } => write!(
+                svg,
+                r#"<circle cx="{x}" cy="{y}" r="{radius}" fill="{}"/>"#,
+                hex(colour)
+            )
+            .unwrap(),
+            Mark::Square {
+                centre: (x, y),
+                half,
+                colour,
+            } => write!(
+                svg,
+                r#"<rect x="{}" y="{}" width="{}" height="{}" fill="{}"/>"#,
+                x - half,
+                y - half,
+                2.0 * half,
+                2.0 * half,
+                hex(colour)
+            )
+            .unwrap(),
         }
     }
-    let (x, y) = centre(maze.start);
-    write!(
-        svg,
-        r#"<circle cx="{x}" cy="{y}" r="{MARK}" fill="black"/>"#
-    )
-    .unwrap();
-    let (x, y) = centre(maze.finish);
-    let side = 2.0 * MARK;
-    write!(
-        svg,
-        r#"<rect x="{}" y="{}" width="{side}" height="{side}" fill="black"/>"#,
-        x - MARK,
-        y - MARK
-    )
-    .unwrap();
     svg.push_str("</svg>");
     svg
 }
 
-pub fn render_solution(maze: &Maze) -> String {
-    let mut svg = render(maze);
-    svg.truncate(svg.len() - "</svg>".len());
-    let route: Vec<String> = maze
-        .solution()
-        .iter()
-        .map(|&id| {
-            let (x, y) = centre(maze.piece(id).cell);
-            format!("{x} {y}")
-        })
-        .collect();
-    write!(
-        svg,
-        r#"<polyline points="{}" fill="none" stroke="red" stroke-width="{EDGE}" stroke-linejoin="round"/></svg>"#,
-        route.join(" ")
+fn hex(colour: Colour) -> String {
+    let byte = |level: f64| (level * 255.0).round() as u8;
+    format!(
+        "#{:02x}{:02x}{:02x}",
+        byte(colour.red),
+        byte(colour.green),
+        byte(colour.blue)
     )
-    .unwrap();
-    svg
-}
-
-fn stroke(svg: &mut String, d: &str, colour: &str, width: f64) {
-    write!(
-        svg,
-        r#"<path d="{d}" fill="none" stroke="{colour}" stroke-width="{width}" stroke-linejoin="round"/>"#
-    )
-    .unwrap();
-}
-
-fn outline(maze: &Maze, id: PieceId) -> String {
-    let piece = maze.piece(id);
-    let (cx, cy) = centre(piece.cell);
-    let sides: Vec<(f64, f64)> = piece
-        .links
-        .iter()
-        .map(|&(dir, _)| side(piece.cell, dir))
-        .collect();
-    sides
-        .windows(2)
-        .map(|pair| {
-            let ((ax, ay), (bx, by)) = (pair[0], pair[1]);
-            format!("M{ax} {ay}L{cx} {cy}L{bx} {by}")
-        })
-        .collect()
-}
-
-fn centre(cell: Cell) -> (f64, f64) {
-    ((cell.x as f64 + 0.5) * CELL, (cell.y as f64 + 0.5) * CELL)
-}
-
-fn side(cell: Cell, dir: Dir) -> (f64, f64) {
-    let (x, y) = centre(cell);
-    let half = CELL / 2.0;
-    match dir {
-        Dir::North => (x, y - half),
-        Dir::East => (x + half, y),
-        Dir::South => (x, y + half),
-        Dir::West => (x - half, y),
-    }
-}
-
-const ZONE_COLOURS: [&str; 5] = ["#d62828", "#2a9d8f", "#3a5bd9", "#f4a261", "#8338ec"];
-
-pub fn render_zones(maze: &Maze) -> String {
-    let mut svg = render(maze);
-    svg.truncate(svg.len() - "</svg>".len());
-    for (id, piece) in maze.pieces().iter().enumerate() {
-        let colour = ZONE_COLOURS[piece.zone % ZONE_COLOURS.len()];
-        stroke(
-            &mut svg,
-            &outline(maze, id),
-            colour,
-            PATH - 2.0 * EDGE - 1.0,
-        );
-    }
-    svg.push_str("</svg>");
-    svg
 }
