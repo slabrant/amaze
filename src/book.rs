@@ -7,7 +7,7 @@ use crate::pdf::A4;
 const MILLIMETRE: f64 = 72.0 / 25.4;
 const MARGIN: f64 = 15.0 * MILLIMETRE;
 const SMALL_GAP: f64 = 10.0 * MILLIMETRE;
-const CELLS_PER_ZONE: usize = 400;
+const SIDE_PER_ZONE: f64 = 4.5;
 const RETRIES: u64 = 20;
 
 pub const TRIVIAL: Grid = Grid {
@@ -62,7 +62,8 @@ pub fn book(seed: u64, contents: &Contents) -> Vec<Vec<Mark>> {
 }
 
 pub fn zones_for(grid: Grid) -> usize {
-    2 + grid.width * grid.height / CELLS_PER_ZONE
+    let side = ((grid.width * grid.height) as f64).sqrt();
+    ((side / SIDE_PER_ZONE).round() as usize).max(2)
 }
 
 fn maze(grid: Grid, seed: u64) -> Maze {
@@ -125,6 +126,15 @@ fn quarter_pages() -> [Slot; 4] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bigger_levels_have_more_zones() {
+        let zones: Vec<usize> = [TRIVIAL, SMALL, EASY, STANDARD, HARD]
+            .into_iter()
+            .map(zones_for)
+            .collect();
+        assert_eq!(zones, vec![3, 3, 4, 5, 7]);
+    }
 
     #[test]
     fn each_front_page_has_a_mirrored_back() {
