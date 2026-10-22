@@ -10,6 +10,7 @@ const HATCH_SPACING: f64 = 0.16;
 const HATCH_WIDTH: f64 = 0.018;
 const ROUNDING: f64 = 0.25;
 const OVERLAP: f64 = 0.02;
+const INNER_ROUNDING: f64 = 0.1;
 const ARC_STEPS: usize = 6;
 const MARK: f64 = HALF;
 const ROUTE: f64 = 0.3;
@@ -155,13 +156,35 @@ pub fn draw(maze: &Maze) -> Vec<Mark> {
             points: ring.iter().map(|&(point, _)| point).collect(),
             colour: Colour::WHITE,
         });
+        let inner = |a: Dir, b: Dir| {
+            ids.iter()
+                .any(|&id| maze.piece(id).has_side(a) && maze.piece(id).has_side(b))
+        };
         for (i, dir) in Dir::ALL.into_iter().enumerate() {
             if joined[i] {
                 marks.push(Mark::Polygon {
                     points: overlapping(arm(cell, dir), dir),
                     colour: Colour::WHITE,
                 });
-                edges.extend(arm_edges(cell, dir));
+                edges.extend(arm_edges(
+                    cell,
+                    dir,
+                    inner(dir, dir.turned_left()),
+                    inner(dir, dir.turned_right()),
+                ));
+            }
+        }
+        for (i, a) in Dir::ALL.into_iter().enumerate() {
+            let b = Dir::ALL[(i + 1) % 4];
+            if inner(a, b) {
+                let arc = fillet(cell, a, b);
+                let mut fill = vec![corner(cell, a, b)];
+                fill.extend(arc.iter().copied());
+                marks.push(Mark::Polygon {
+                    points: fill,
+                    colour: Colour::WHITE,
+                });
+                edges.push(arc);
             }
         }
         edges.extend(wall_faces(&ring));
@@ -259,9 +282,35 @@ fn overlapping(arm: Vec<Point>, dir: Dir) -> Vec<Point> {
     ]
 }
 
-fn arm_edges(cell: Cell, dir: Dir) -> Vec<Vec<Point>> {
+fn arm_edges(cell: Cell, dir: Dir, inner_left: bool, inner_right: bool) -> Vec<Vec<Point>> {
     let points = arm(cell, dir);
-    vec![vec![points[0], points[3]], vec![points[1], points[2]]]
+    let (dx, dy) = offset(dir);
+    let start = |point: Point, inner: bool| {
+        let pull = if inner { INNER_ROUNDING } else { 0.0 };
+        (point.0 + dx * pull, point.1 + dy * pull)
+    };
+    vec![
+        vec![start(points[0], inner_left), points[3]],
+        vec![start(points[1], inner_right), points[2]],
+    ]
+}
+
+fn fillet(cell: Cell, a: Dir, b: Dir) -> Vec<Point> {
+    let (cx, cy) = corner(cell, a, b);
+    let ((ax, ay), (bx, by)) = (offset(a), offset(b));
+    let (ox, oy) = (
+        cx + (ax + bx) * INNER_ROUNDING,
+        cy + (ay + by) * INNER_ROUNDING,
+    );
+    (0..=ARC_STEPS)
+        .map(|step| {
+            let angle = std::f64::consts::FRAC_PI_2 * step as f64 / ARC_STEPS as f64;
+            (
+                ox - (bx * angle.cos() + ax * angle.sin()) * INNER_ROUNDING,
+                oy - (by * angle.cos() + ay * angle.sin()) * INNER_ROUNDING,
+            )
+        })
+        .collect()
 }
 
 fn across(cell: Cell, north_south: bool) -> Vec<Vec<Point>> {

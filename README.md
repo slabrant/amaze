@@ -51,7 +51,7 @@ filled. If a zone cannot be started, generation fails.
 
 - Paths are white with thin black edges, about three quarters of a cell wide. No walls.
 - The space between paths is lightly hatched, and a black line runs round the outside.
-- Turns are slightly rounded on the outside.
+- Turns are rounded, inside and outside.
 - At a crossing, the top path is whole and the lower path's edges carry on across it as grey dashes.
 - A crossing where both paths run the same way: undecided (dashed edges, or a narrower top path).
 - Start: a red square with a white dot. It has no direction; the solver can set off either way.
