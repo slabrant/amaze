@@ -37,17 +37,9 @@ pub fn render(maze: &Maze) -> String {
 }
 
 pub fn render_solution(maze: &Maze) -> String {
-    svg(
-        maze,
-        &draw_solution(
-            maze,
-            Colour {
-                red: 1.0,
-                green: 0.0,
-                blue: 0.0,
-            },
-        ),
-    )
+    let mut marks = draw(maze);
+    marks.extend(draw_solution(maze));
+    svg(maze, &marks)
 }
 
 pub fn render_zones(maze: &Maze) -> String {
@@ -66,7 +58,17 @@ fn svg(maze: &Maze, marks: &[Mark]) -> String {
                 lines,
                 width,
                 colour,
+                dash,
+                round,
             } => {
+                let (cap, join) = if round {
+                    ("round", "round")
+                } else {
+                    ("butt", "miter")
+                };
+                let pattern = dash.map_or(String::new(), |[on, off]| {
+                    format!(r#" stroke-dasharray="{on} {off}""#)
+                });
                 let d: String = lines
                     .iter()
                     .map(|line| {
@@ -78,7 +80,7 @@ fn svg(maze: &Maze, marks: &[Mark]) -> String {
                     .collect();
                 write!(
                     svg,
-                    r#"<path d="{d}" fill="none" stroke="{}" stroke-width="{width}" stroke-linejoin="round"/>"#,
+                    r#"<path d="{d}" fill="none" stroke="{}" stroke-width="{width}" stroke-linecap="{cap}" stroke-linejoin="{join}"{pattern}/>"#,
                     hex(colour)
                 )
                 .unwrap();

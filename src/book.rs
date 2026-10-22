@@ -1,4 +1,6 @@
-use crate::drawing::{Colour, Mark, Point, draw, draw_solution};
+#[cfg(test)]
+use crate::drawing::Colour;
+use crate::drawing::{Mark, Point, draw, draw_solution};
 use crate::generate::generate;
 use crate::grid::Grid;
 use crate::maze::Maze;
@@ -81,7 +83,7 @@ fn sheet(mazes: &[Maze], slots: &[Slot]) -> [Vec<Mark>; 2] {
     let back = mazes
         .iter()
         .zip(slots)
-        .flat_map(|(maze, slot)| place(maze, &draw_solution(maze, Colour::SOLUTION), slot))
+        .flat_map(|(maze, slot)| place(maze, &draw_solution(maze), slot))
         .map(|mark| mark.moved(1.0, |(x, y)| (A4.0 - x, y)))
         .collect();
     [front, back]
@@ -137,7 +139,7 @@ mod tests {
     }
 
     #[test]
-    fn each_front_page_has_a_mirrored_back() {
+    fn each_solution_starts_behind_its_start() {
         let pages = book(
             0,
             &Contents {
@@ -146,21 +148,32 @@ mod tests {
             },
         );
         assert_eq!(pages.len(), 10);
-        let dots = |page: &Vec<Mark>| -> Vec<Point> {
-            page.iter()
+        for sheet in pages.chunks(2) {
+            let starts: Vec<Point> = sheet[0]
+                .iter()
                 .filter_map(|mark| match mark {
-                    Mark::Disc { centre, .. } => Some(*centre),
+                    Mark::Square {
+                        centre,
+                        colour: Colour::START,
+                        ..
+                    } => Some(*centre),
                     _ => None,
                 })
-                .collect()
-        };
-        for sheet in pages.chunks(2) {
-            let front = dots(&sheet[0]);
-            let back = dots(&sheet[1]);
-            assert_eq!(front.len(), back.len());
-            for ((fx, fy), (bx, by)) in front.into_iter().zip(back) {
-                assert!((fx + bx - A4.0).abs() < 1e-9);
-                assert!((fy - by).abs() < 1e-9);
+                .collect();
+            let route_points: Vec<Point> = sheet[1]
+                .iter()
+                .flat_map(|mark| match mark {
+                    Mark::Lines { lines, .. } => lines.concat(),
+                    _ => Vec::new(),
+                })
+                .collect();
+            assert!(!starts.is_empty());
+            for (x, y) in starts {
+                assert!(
+                    route_points
+                        .iter()
+                        .any(|&(bx, by)| { (x + bx - A4.0).abs() < 1e-9 && (y - by).abs() < 1e-9 })
+                );
             }
         }
     }

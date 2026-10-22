@@ -50,7 +50,7 @@ pub fn pdf(pages: &[Vec<Mark>]) -> Vec<u8> {
 }
 
 fn content(marks: &[Mark], height: f64) -> String {
-    let mut out = String::from("1 j 0 J\n");
+    let mut out = String::new();
     let up = |(x, y): (f64, f64)| (x, height - y);
     for mark in marks {
         match mark {
@@ -58,8 +58,20 @@ fn content(marks: &[Mark], height: f64) -> String {
                 lines,
                 width,
                 colour,
+                dash,
+                round,
             } => {
-                writeln!(out, "{} RG {width:.3} w", rgb(*colour)).unwrap();
+                let (cap, join) = if *round { (1, 1) } else { (0, 0) };
+                let pattern = match dash {
+                    Some([on, off]) => format!("[{on:.3} {off:.3}] 0 d"),
+                    None => "[] 0 d".to_string(),
+                };
+                writeln!(
+                    out,
+                    "{} RG {width:.3} w {cap} J {join} j {pattern}",
+                    rgb(*colour)
+                )
+                .unwrap();
                 for line in lines {
                     for (i, &point) in line.iter().enumerate() {
                         let (x, y) = up(point);
