@@ -7,7 +7,7 @@ const ATTEMPTS: usize = 1000;
 const ZONE_START_ATTEMPTS: usize = 20_000;
 const CANDIDATES: usize = 40;
 const ALWAYS_SOME: f64 = 0.2;
-const OVERSIZE_WEIGHT: f64 = 200.0;
+const SHARE_WEIGHT: f64 = 1000.0;
 const ZONE_START_CANDIDATES: usize = 200;
 const NEAR_ENDS: usize = 8;
 
@@ -207,8 +207,8 @@ fn best_step(maze: &Maze, rng: &mut StdRng) -> Option<Step> {
         .into_iter()
         .map(|step| {
             let share = sizes[step.zone] as f64 / maze.pieces().len() as f64;
-            let oversize = (share - fair_share).max(0.0);
-            let score = step_score(maze, &solution, &counts, &step) - OVERSIZE_WEIGHT * oversize;
+            let score =
+                step_score(maze, &solution, &counts, &step) - SHARE_WEIGHT * (share - fair_share);
             (score, step)
         })
         .max_by(|a, b| a.0.total_cmp(&b.0))
