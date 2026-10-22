@@ -26,6 +26,7 @@ pub const STEP_BASELINE: f64 = 0.05;
 pub const LEANING_STRENGTH: f64 = 16.0;
 pub const STEP_LEANING: f64 = 4.0;
 pub const CHANCE_TO_BRANCH: f64 = 0.1;
+pub const DEEPEST_DETOUR: usize = 2;
 
 #[derive(Clone, Copy, Default)]
 pub struct Scores {
