@@ -30,6 +30,19 @@ impl Dir {
         }
     }
 
+    pub fn turned_left(self) -> Dir {
+        match self {
+            Dir::North => Dir::West,
+            Dir::East => Dir::North,
+            Dir::South => Dir::East,
+            Dir::West => Dir::South,
+        }
+    }
+
+    pub fn turned_right(self) -> Dir {
+        self.turned_left().opposite()
+    }
+
     pub fn between(from: Cell, to: Cell) -> Option<Dir> {
         Dir::ALL
             .into_iter()

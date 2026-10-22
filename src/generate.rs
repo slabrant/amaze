@@ -2,11 +2,14 @@ use crate::goals::{LONG_ROUTE, cells_near, zone_counts};
 use crate::grid::{Cell, Dir, Grid};
 use crate::maze::{Content, Maze, PieceId, Routes, Step, StepCell};
 use rand::prelude::*;
+use std::collections::HashSet;
 
 const ATTEMPTS: usize = 1000;
 const ZONE_START_ATTEMPTS: usize = 20_000;
 const CANDIDATES: usize = 40;
 const ALWAYS_SOME: f64 = 0.2;
+const FIRST_LOOP_SHARE: f64 = 0.35;
+const BUMP_ATTEMPTS: usize = 100_000;
 const SHARE_WEIGHT: f64 = 1000.0;
 const ZONE_START_CANDIDATES: usize = 200;
 const NEAR_ENDS: usize = 8;
@@ -291,12 +294,41 @@ fn first_loop(grid: Grid, rng: &mut StdRng) -> Vec<Cell> {
     let top = rng.random_range(1..=grid.height - 1 - height);
     let right = left + width - 1;
     let bottom = top + height - 1;
-    (left..right)
+    let mut cells: Vec<Cell> = (left..right)
         .map(|x| Cell { x, y: top })
         .chain((top..bottom).map(|y| Cell { x: right, y }))
         .chain((left + 1..=right).rev().map(|x| Cell { x, y: bottom }))
         .chain((top + 1..=bottom).rev().map(|y| Cell { x: left, y }))
-        .collect()
+        .collect();
+    let mut taken: HashSet<Cell> = cells.iter().copied().collect();
+    let inside = |cell: Cell| {
+        (1..grid.width - 1).contains(&cell.x) && (1..grid.height - 1).contains(&cell.y)
+    };
+    let wanted = (FIRST_LOOP_SHARE * (grid.width * grid.height) as f64) as usize;
+    for _ in 0..BUMP_ATTEMPTS {
+        if cells.len() >= wanted {
+            break;
+        }
+        let i = rng.random_range(0..cells.len());
+        let (a, b) = (cells[i], cells[(i + 1) % cells.len()]);
+        let Some(along) = Dir::between(a, b) else {
+            continue;
+        };
+        let side = *[along.turned_left(), along.turned_right()]
+            .choose(rng)
+            .unwrap_or(&along);
+        let bump = (grid.neighbour(a, side), grid.neighbour(b, side));
+        if let (Some(a_out), Some(b_out)) = bump
+            && inside(a_out)
+            && inside(b_out)
+            && !taken.contains(&a_out)
+            && !taken.contains(&b_out)
+        {
+            cells.splice(i + 1..i + 1, [a_out, b_out]);
+            taken.extend([a_out, b_out]);
+        }
+    }
+    cells
 }
 
 fn open_sides(maze: &Maze, zone: usize) -> Vec<(PieceId, Dir)> {
@@ -494,7 +526,7 @@ mod tests {
             all.iter().map(f).sum::<f64>() / all.len() as f64
         };
         println!(
-            "short {:.2} near {:.2} crossings {:.0} in_a_row {:.0} joins {:.1} empty {:.1} ends {:.1} solution {:.0} least_mixed {:.2} each {:?}",
+            "short {:.2} near {:.2} crossings {:.0} in_a_row {:.0} joins {:.1} empty {:.1} ends {:.1} solution {:.0} least_mixed {:.2} border {:.2} solvers {:.2} {:.2} {:.2} {:.2} each {:?}",
             average(&|m| m.short_routes_between_neighbours),
             average(&|m| m.maze_cells_near_solution),
             average(&|m| m.crossings as f64),
@@ -504,6 +536,11 @@ mod tests {
             average(&|m| m.start_to_finish),
             average(&|m| m.solution_length as f64),
             average(&|m| m.least_mixed_zone),
+            average(&|m| m.solution_on_border),
+            average(&|m| m.solver_steps[0]),
+            average(&|m| m.solver_steps[1]),
+            average(&|m| m.solver_steps[2]),
+            average(&|m| m.solver_steps[3]),
             started.elapsed() / seeds as u32,
         );
     }

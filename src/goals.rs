@@ -1,9 +1,13 @@
 use crate::grid::{Cell, Grid};
 use crate::maze::{Content, Maze};
+use crate::solvers::{Solver, steps_to_finish};
+use rand::prelude::*;
 
 pub const NEAR: usize = 3;
 pub const LONG_ROUTE: usize = 12;
 pub const MIXING_REACH: usize = 2;
+const SOLVER_RUNS: usize = 10;
+const SOLVER_PATIENCE: usize = 50;
 
 #[derive(Clone, Debug)]
 pub struct Measures {
@@ -17,6 +21,8 @@ pub struct Measures {
     pub start_to_finish: f64,
     pub least_mixed_zone: f64,
     pub solution_length: usize,
+    pub solution_on_border: f64,
+    pub solver_steps: Vec<f64>,
 }
 
 pub fn measure(maze: &Maze) -> Measures {
@@ -72,6 +78,28 @@ pub fn measure(maze: &Maze) -> Measures {
                 .fold(1.0, f64::min)
         },
         solution_length: solution.len(),
+        solution_on_border: solution
+            .iter()
+            .filter(|&&id| {
+                let cell = maze.piece(id).cell;
+                cell.x <= 1
+                    || cell.y <= 1
+                    || cell.x + 2 >= maze.grid.width
+                    || cell.y + 2 >= maze.grid.height
+            })
+            .count() as f64
+            / solution.len().max(1) as f64,
+        solver_steps: Solver::ALL
+            .iter()
+            .map(|&solver| {
+                let mut rng = StdRng::seed_from_u64(0);
+                let most = SOLVER_PATIENCE * maze.pieces().len();
+                let total: usize = (0..SOLVER_RUNS)
+                    .map(|_| steps_to_finish(maze, solver, &mut rng, most))
+                    .sum();
+                total as f64 / SOLVER_RUNS as f64 / maze.pieces().len() as f64
+            })
+            .collect(),
     }
 }
 
