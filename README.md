@@ -7,15 +7,16 @@ Printable mazes where paths go over and under each other.
 - Cell: one square of the grid.
 - Neighbour: a cell that shares a side with another cell.
 - Joined: two neighbouring cells are joined if a path goes from one to the other.
-- Path: a string of cells, each joined to the next. It can turn but does not fork.
-- Maze: all the paths. A cell with no path in it is empty.
+- Junction: a cell where the maze forks, joined to three or four neighbours. A junction is not part of any path.
+- Path: a string of cells between junctions, each joined to the next. It can turn but does not fork.
+- Maze: all the paths and junctions. A cell with no path or junction in it is empty.
 - Loop: a path whose last cell is joined to its first.
 - Crossing: a cell with two paths in it. The cell records which path is on top.
 - Route: the cells gone through, from joined cell to joined cell, to get from one cell to another.
 - Start, finish: the cells where the solver begins and ends.
 - Solution: the route from start to finish.
 - Zone: a part of the maze spread among the other zones, not kept in one area. Zones are in order, first to last. Two zones join where a cell of one is joined to a cell of the other.
-- Step: adding a path whose two ends are joined to the maze. Its cells are empty cells or cells with one path in them; those become crossings.
+- Step: adding a path whose two ends are joined to the maze. The cells its ends join become junctions, splitting the paths they were on. Its cells are empty cells or cells with one path in them; those become crossings.
 
 ## Building
 
