@@ -23,7 +23,8 @@ Printable mazes where paths go over and under each other.
 Start with one loop. Then make steps, each picked from the steps the rules
 allow, favouring the goals. Each step is in one zone. A new zone starts with a
 step whose two ends join the same cell of the last zone. Steps are never undone
-or changed. If no step is allowed, generation fails.
+or changed. Steps are made until no step is allowed, when the area is nearly
+filled. If a zone cannot be started, generation fails.
 
 ## Rules
 

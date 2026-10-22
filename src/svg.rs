@@ -3,9 +3,9 @@ use crate::maze::{Maze, PieceId};
 use std::fmt::Write;
 
 const CELL: f64 = 20.0;
-const PATH: f64 = 12.0;
+const PATH: f64 = 9.0;
 const EDGE: f64 = 1.5;
-const GAP: f64 = 3.0;
+const GAP: f64 = 2.5;
 
 pub fn render(maze: &Maze) -> String {
     let width = maze.grid.width as f64 * CELL;
