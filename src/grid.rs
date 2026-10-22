@@ -4,6 +4,12 @@ pub struct Cell {
     pub y: usize,
 }
 
+impl Cell {
+    pub fn squared_distance(self, other: Cell) -> usize {
+        self.x.abs_diff(other.x).pow(2) + self.y.abs_diff(other.y).pow(2)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Dir {
     North,

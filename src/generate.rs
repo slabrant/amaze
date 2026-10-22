@@ -39,10 +39,21 @@ pub fn generate(grid: Grid, seed: u64, zones: usize) -> Result<Maze, Failed> {
             break;
         }
     }
-    maze.start = *cells_in_zone(&maze, 0).choose(&mut rng).ok_or(Failed)?;
-    maze.finish = *cells_in_zone(&maze, zones - 1)
-        .choose(&mut rng)
+    let finishes = cells_in_zone(&maze, zones - 1);
+    let pairs: Vec<(Cell, Cell)> = cells_in_zone(&maze, 0)
+        .into_iter()
+        .flat_map(|start| finishes.iter().map(move |&finish| (start, finish)))
+        .collect();
+    let nearest = pairs
+        .iter()
+        .map(|&(start, finish)| start.squared_distance(finish))
+        .min()
         .ok_or(Failed)?;
+    let nearest_pairs: Vec<(Cell, Cell)> = pairs
+        .into_iter()
+        .filter(|&(start, finish)| start.squared_distance(finish) == nearest)
+        .collect();
+    (maze.start, maze.finish) = *nearest_pairs.choose(&mut rng).ok_or(Failed)?;
     Ok(maze)
 }
 
@@ -181,7 +192,7 @@ fn find_step(maze: &Maze, rng: &mut StdRng, zone: usize) -> Option<Step> {
 mod tests {
     use super::*;
     use crate::rules::broken;
-    use crate::svg::render;
+    use crate::svg::{render, render_solution};
 
     const GRID: Grid = Grid {
         width: 20,
@@ -222,6 +233,20 @@ mod tests {
     }
 
     #[test]
+    fn solution_goes_from_start_to_finish_through_every_zone() {
+        for seed in 0..5 {
+            let maze = generate(GRID, seed, 3).unwrap();
+            let solution = maze.solution();
+            let first = maze.piece(solution[0]);
+            let last = maze.piece(solution[solution.len() - 1]);
+            assert_eq!((first.cell, last.cell), (maze.start, maze.finish));
+            let zones: Vec<usize> = solution.iter().map(|&id| maze.piece(id).zone).collect();
+            assert!(zones.windows(2).all(|pair| pair[1] <= pair[0] + 1));
+            assert_eq!(zones.iter().max(), Some(&2));
+        }
+    }
+
+    #[test]
     fn same_seed_same_maze() {
         let a = generate(GRID, 7, 3).unwrap();
         let b = generate(GRID, 7, 3).unwrap();
@@ -235,6 +260,11 @@ mod tests {
         for seed in 0..4 {
             let maze = generate(GRID, seed, 3).unwrap();
             std::fs::write(dir.join(format!("maze-{seed}.svg")), render(&maze)).unwrap();
+            std::fs::write(
+                dir.join(format!("maze-{seed}-solution.svg")),
+                render_solution(&maze),
+            )
+            .unwrap();
         }
     }
 }

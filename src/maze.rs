@@ -1,5 +1,5 @@
 use crate::grid::{Cell, Dir, Grid};
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 
 pub type PieceId = usize;
 
@@ -130,6 +130,29 @@ impl Maze {
                 .iter()
                 .any(|&(_, other)| self.pieces[other].cell == b)
         })
+    }
+
+    pub fn solution(&self) -> Vec<PieceId> {
+        let mut came_from: Vec<Option<PieceId>> = vec![None; self.pieces.len()];
+        let mut queue: VecDeque<PieceId> = self.pieces_in(self.start).iter().copied().collect();
+        let mut seen: HashSet<PieceId> = queue.iter().copied().collect();
+        while let Some(id) = queue.pop_front() {
+            if self.pieces[id].cell == self.finish {
+                let mut route = vec![id];
+                while let Some(before) = came_from[route[route.len() - 1]] {
+                    route.push(before);
+                }
+                route.reverse();
+                return route;
+            }
+            for &(_, next) in &self.pieces[id].links {
+                if seen.insert(next) {
+                    came_from[next] = Some(id);
+                    queue.push_back(next);
+                }
+            }
+        }
+        Vec::new()
     }
 
     pub fn check_step(&self, step: &Step) -> Result<(), StepError> {

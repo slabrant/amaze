@@ -6,6 +6,7 @@ const CELL: f64 = 20.0;
 const PATH: f64 = 9.0;
 const EDGE: f64 = 1.5;
 const GAP: f64 = 2.5;
+const MARK: f64 = 3.0;
 
 pub fn render(maze: &Maze) -> String {
     let width = maze.grid.width as f64 * CELL;
@@ -29,7 +30,42 @@ pub fn render(maze: &Maze) -> String {
             stroke(&mut svg, &upper, "white", PATH - 2.0 * EDGE);
         }
     }
+    let (x, y) = centre(maze.start);
+    write!(
+        svg,
+        r#"<circle cx="{x}" cy="{y}" r="{MARK}" fill="black"/>"#
+    )
+    .unwrap();
+    let (x, y) = centre(maze.finish);
+    let side = 2.0 * MARK;
+    write!(
+        svg,
+        r#"<rect x="{}" y="{}" width="{side}" height="{side}" fill="black"/>"#,
+        x - MARK,
+        y - MARK
+    )
+    .unwrap();
     svg.push_str("</svg>");
+    svg
+}
+
+pub fn render_solution(maze: &Maze) -> String {
+    let mut svg = render(maze);
+    svg.truncate(svg.len() - "</svg>".len());
+    let route: Vec<String> = maze
+        .solution()
+        .iter()
+        .map(|&id| {
+            let (x, y) = centre(maze.piece(id).cell);
+            format!("{x} {y}")
+        })
+        .collect();
+    write!(
+        svg,
+        r#"<polyline points="{}" fill="none" stroke="red" stroke-width="{EDGE}" stroke-linejoin="round"/></svg>"#,
+        route.join(" ")
+    )
+    .unwrap();
     svg
 }
 
