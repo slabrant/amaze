@@ -1,4 +1,4 @@
-use crate::goals::{LONG_ROUTE, near_solution};
+use crate::goals::{LONG_ROUTE, cells_near, zone_counts};
 use crate::grid::{Cell, Dir, Grid};
 use crate::maze::{Content, Maze, PieceId, Routes, Step, StepCell};
 use rand::prelude::*;
@@ -14,6 +14,8 @@ const NEAR_SOLUTION_WEIGHT: f64 = 100.0;
 const CROSSING_WEIGHT: f64 = 1.0;
 const CROSSING_IN_A_ROW_WEIGHT: f64 = 1.0;
 const EMPTY_CELL_WEIGHT: f64 = 0.5;
+const MIXING_WEIGHT: f64 = 8.0;
+const FINISH_NEAR_START_WEIGHT: f64 = 10.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Failed;
@@ -30,7 +32,14 @@ pub fn generate(grid: Grid, seed: u64, zones: usize) -> Result<Maze, Failed> {
     let mut entry = maze.pieces_in(maze.start)[0];
     for zone in 1..zones {
         let step = candidates(&maze, &mut rng, zone, ZONE_START_ATTEMPTS)
-            .max_by_key(|step| zone_start_score(&maze, entry, step))
+            .map(|step| {
+                (
+                    zone_start_score(&maze, entry, &step, zone + 1 == zones),
+                    step,
+                )
+            })
+            .max_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, step)| step)
             .ok_or(Failed)?;
         entry = step.from;
         maze.make_step(&step).map_err(|_| Failed)?;
@@ -76,13 +85,24 @@ fn candidates<'a>(
         .take(wanted)
 }
 
-fn zone_start_score(maze: &Maze, entry: PieceId, step: &Step) -> usize {
+fn zone_start_score(maze: &Maze, entry: PieceId, step: &Step, last: bool) -> f64 {
     let route = maze.routes_from(&[entry]).distances[step.from];
     let crow = maze
         .piece(entry)
         .cell
         .squared_distance(maze.piece(step.from).cell);
-    2 * route + (crow as f64).sqrt() as usize + step.cells.len()
+    let start_to_loop = step
+        .cells
+        .iter()
+        .map(|c| c.cell.squared_distance(maze.start))
+        .min()
+        .unwrap_or(usize::MAX);
+    let finish_away = if last {
+        FINISH_NEAR_START_WEIGHT * (start_to_loop as f64).sqrt()
+    } else {
+        0.0
+    };
+    (2 * route + step.cells.len()) as f64 + (crow as f64).sqrt() - finish_away
 }
 
 fn place_finish(maze: &mut Maze, zones: usize) -> Result<(), Failed> {
@@ -133,7 +153,7 @@ impl Solution {
         let from_start = maze.routes_from(maze.pieces_in(maze.start));
         let from_finish = maze.routes_from(maze.pieces_in(maze.finish));
         let route = maze.solution();
-        let near_fraction = near_fraction(near_solution(
+        let near_fraction = near_fraction(cells_near(
             maze.grid,
             route.iter().map(|&id| maze.piece(id).cell),
         ));
@@ -178,7 +198,7 @@ impl Solution {
             .map(|id| maze.piece(id).cell)
             .chain(cells)
             .chain(finishing.into_iter().map(|id| maze.piece(id).cell));
-        near_fraction(near_solution(maze.grid, route))
+        near_fraction(cells_near(maze.grid, route))
     }
 }
 
@@ -188,13 +208,14 @@ fn near_fraction(near: Vec<bool>) -> f64 {
 
 fn best_step(maze: &Maze, rng: &mut StdRng, zone: usize) -> Option<Step> {
     let solution = Solution::of(maze);
+    let counts = zone_counts(maze);
     candidates(maze, rng, zone, ATTEMPTS)
-        .map(|step| (step_score(maze, &solution, &step), step))
+        .map(|step| (step_score(maze, &solution, &counts, &step), step))
         .max_by(|a, b| a.0.total_cmp(&b.0))
         .map(|(_, step)| step)
 }
 
-fn step_score(maze: &Maze, solution: &Solution, step: &Step) -> f64 {
+fn step_score(maze: &Maze, solution: &Solution, counts: &[Vec<usize>], step: &Step) -> f64 {
     let near_fraction = solution.near_fraction_after(maze, step);
     let is_crossing = |c: &StepCell| maze.content(c.cell) == Content::Path;
     let crossings = step.cells.iter().filter(|c| is_crossing(c)).count();
@@ -212,6 +233,23 @@ fn step_score(maze: &Maze, solution: &Solution, step: &Step) -> f64 {
         + CROSSING_WEIGHT * crossings as f64
         + CROSSING_IN_A_ROW_WEIGHT * crossings_in_a_row as f64
         + EMPTY_CELL_WEIGHT * empty_cells as f64
+        + MIXING_WEIGHT * mixing(maze, counts, step)
+}
+
+fn mixing(maze: &Maze, counts: &[Vec<usize>], step: &Step) -> f64 {
+    step.cells
+        .iter()
+        .map(|c| {
+            let here = &counts[maze.grid.index(c.cell)];
+            let all: usize = here.iter().sum();
+            let own = here.get(step.zone).copied().unwrap_or(0);
+            if all == 0 {
+                0.5
+            } else {
+                1.0 - own as f64 / all as f64
+            }
+        })
+        .sum()
 }
 
 fn short_route_shortfall(maze: &Maze, step: &Step) -> f64 {
@@ -364,7 +402,7 @@ fn find_step(maze: &Maze, rng: &mut StdRng, zone: usize, sides: &[(PieceId, Dir)
 mod tests {
     use super::*;
     use crate::rules::broken;
-    use crate::svg::{render, render_solution};
+    use crate::svg::{render, render_solution, render_zones};
 
     const GRID: Grid = Grid {
         width: 20,
@@ -442,7 +480,7 @@ mod tests {
             all.iter().map(f).sum::<f64>() / all.len() as f64
         };
         println!(
-            "short {:.2} near {:.2} crossings {:.0} in_a_row {:.0} joins {:.1} empty {:.1} ends {:.1} solution {:.0} each {:?}",
+            "short {:.2} near {:.2} crossings {:.0} in_a_row {:.0} joins {:.1} empty {:.1} ends {:.1} solution {:.0} mixing {:.2} each {:?}",
             average(&|m| m.short_routes_between_neighbours),
             average(&|m| m.maze_cells_near_solution),
             average(&|m| m.crossings as f64),
@@ -451,6 +489,7 @@ mod tests {
             average(&|m| m.empty_cells as f64),
             average(&|m| m.start_to_finish),
             average(&|m| m.solution_length as f64),
+            average(&|m| m.zone_mixing),
             started.elapsed() / seeds as u32,
         );
     }
@@ -472,6 +511,11 @@ mod tests {
             std::fs::write(
                 dir.join(format!("maze-{seed}-solution.svg")),
                 render_solution(&maze),
+            )
+            .unwrap();
+            std::fs::write(
+                dir.join(format!("maze-{seed}-zones.svg")),
+                render_zones(&maze),
             )
             .unwrap();
         }

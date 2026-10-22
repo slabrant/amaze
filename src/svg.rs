@@ -108,3 +108,21 @@ fn side(cell: Cell, dir: Dir) -> (f64, f64) {
         Dir::West => (x - half, y),
     }
 }
+
+const ZONE_COLOURS: [&str; 5] = ["#d62828", "#2a9d8f", "#3a5bd9", "#f4a261", "#8338ec"];
+
+pub fn render_zones(maze: &Maze) -> String {
+    let mut svg = render(maze);
+    svg.truncate(svg.len() - "</svg>".len());
+    for (id, piece) in maze.pieces().iter().enumerate() {
+        let colour = ZONE_COLOURS[piece.zone % ZONE_COLOURS.len()];
+        stroke(
+            &mut svg,
+            &outline(maze, id),
+            colour,
+            PATH - 2.0 * EDGE - 1.0,
+        );
+    }
+    svg.push_str("</svg>");
+    svg
+}

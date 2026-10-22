@@ -3,6 +3,7 @@ use crate::maze::{Content, Maze};
 
 pub const NEAR: usize = 3;
 pub const LONG_ROUTE: usize = 12;
+pub const MIXING_REACH: usize = 2;
 
 #[derive(Clone, Debug)]
 pub struct Measures {
@@ -14,6 +15,7 @@ pub struct Measures {
     pub zones: usize,
     pub empty_cells: usize,
     pub start_to_finish: f64,
+    pub zone_mixing: f64,
     pub solution_length: usize,
 }
 
@@ -25,7 +27,7 @@ pub fn measure(maze: &Maze) -> Measures {
         .copied()
         .filter(|&cell| maze.content(cell) != Content::Empty)
         .collect();
-    let near = near_solution(maze.grid, solution.iter().map(|&id| maze.piece(id).cell));
+    let near = cells_near(maze.grid, solution.iter().map(|&id| maze.piece(id).cell));
     let joins = zone_joins(maze);
     Measures {
         short_routes_between_neighbours: short_routes_between_neighbours(maze),
@@ -48,11 +50,25 @@ pub fn measure(maze: &Maze) -> Measures {
         zones: maze.zones(),
         empty_cells: cells.len() - maze_cells.len(),
         start_to_finish: (maze.start.squared_distance(maze.finish) as f64).sqrt(),
+        zone_mixing: {
+            let counts = zone_counts(maze);
+            maze_cells
+                .iter()
+                .filter(|&&cell| {
+                    counts[maze.grid.index(cell)]
+                        .iter()
+                        .filter(|&&count| count > 0)
+                        .count()
+                        > 1
+                })
+                .count() as f64
+                / maze_cells.len() as f64
+        },
         solution_length: solution.len(),
     }
 }
 
-pub fn near_solution(grid: Grid, route: impl IntoIterator<Item = Cell>) -> Vec<bool> {
+pub fn cells_near(grid: Grid, route: impl IntoIterator<Item = Cell>) -> Vec<bool> {
     let mut near = vec![false; grid.width * grid.height];
     for on in route {
         for y in on.y.saturating_sub(NEAR)..=(on.y + NEAR).min(grid.height - 1) {
@@ -65,6 +81,20 @@ pub fn near_solution(grid: Grid, route: impl IntoIterator<Item = Cell>) -> Vec<b
         }
     }
     near
+}
+
+pub fn zone_counts(maze: &Maze) -> Vec<Vec<usize>> {
+    let grid = maze.grid;
+    let mut counts = vec![vec![0; maze.zones()]; grid.width * grid.height];
+    for piece in maze.pieces() {
+        let at = piece.cell;
+        for y in at.y.saturating_sub(MIXING_REACH)..=(at.y + MIXING_REACH).min(grid.height - 1) {
+            for x in at.x.saturating_sub(MIXING_REACH)..=(at.x + MIXING_REACH).min(grid.width - 1) {
+                counts[grid.index(Cell { x, y })][piece.zone] += 1;
+            }
+        }
+    }
+    counts
 }
 
 pub fn zone_joins(maze: &Maze) -> Vec<Cell> {
