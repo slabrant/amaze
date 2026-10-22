@@ -3,6 +3,7 @@ use crate::maze::{Content, Maze, PieceId, Step, StepCell};
 use rand::prelude::*;
 
 const ATTEMPTS: usize = 1000;
+const ZONE_START_ATTEMPTS: usize = 20_000;
 const CANDIDATES: usize = 20;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -15,7 +16,7 @@ pub fn generate(grid: Grid, seed: u64, zones: usize) -> Result<Maze, Failed> {
     let mut rng = StdRng::seed_from_u64(seed);
     let mut maze = Maze::with_loop(grid, &first_loop(grid, &mut rng)).map_err(|_| Failed)?;
     for zone in 1..zones {
-        let step = best_step(&maze, &mut rng, zone).ok_or(Failed)?;
+        let step = best_step(&maze, &mut rng, zone, ZONE_START_ATTEMPTS).ok_or(Failed)?;
         maze.make_step(&step).map_err(|_| Failed)?;
     }
     let mut turns: Vec<usize> = (0..zones).collect();
@@ -29,7 +30,7 @@ pub fn generate(grid: Grid, seed: u64, zones: usize) -> Result<Maze, Failed> {
         });
         let mut stepped = false;
         for &zone in &turns {
-            if let Some(step) = best_step(&maze, &mut rng, zone) {
+            if let Some(step) = best_step(&maze, &mut rng, zone, ATTEMPTS) {
                 maze.make_step(&step).map_err(|_| Failed)?;
                 stepped = true;
             }
@@ -45,8 +46,8 @@ pub fn generate(grid: Grid, seed: u64, zones: usize) -> Result<Maze, Failed> {
     Ok(maze)
 }
 
-fn best_step(maze: &Maze, rng: &mut StdRng, zone: usize) -> Option<Step> {
-    (0..ATTEMPTS)
+fn best_step(maze: &Maze, rng: &mut StdRng, zone: usize, attempts: usize) -> Option<Step> {
+    (0..attempts)
         .filter_map(|_| find_step(maze, rng, zone))
         .take(CANDIDATES)
         .max_by_key(|step| empty_cells_filled(maze, step))
@@ -105,7 +106,19 @@ fn open_sides(maze: &Maze, zone: usize) -> Vec<(PieceId, Dir)> {
 }
 
 fn can_enter(maze: &Maze, cell: Cell) -> bool {
-    matches!(maze.content(cell), Content::Empty | Content::Path)
+    match maze.pieces_in(cell) {
+        [] => true,
+        [crossed] => maze.piece(*crossed).is_straight(),
+        _ => false,
+    }
+}
+
+fn ways_on(maze: &Maze, here: Cell, heading: Dir) -> Vec<Dir> {
+    if maze.content(here) == Content::Path {
+        vec![heading]
+    } else {
+        Dir::ALL.to_vec()
+    }
 }
 
 fn find_step(maze: &Maze, rng: &mut StdRng, zone: usize) -> Option<Step> {
@@ -119,19 +132,25 @@ fn find_step(maze: &Maze, rng: &mut StdRng, zone: usize) -> Option<Step> {
         cell: first,
         on_top: rng.random_bool(0.5),
     }];
+    let mut heading = out;
     let limit = rng.random_range(1..=grid.width * grid.height);
     let mut longest = None;
     loop {
         let here = cells[cells.len() - 1].cell;
-        for (_, next) in grid.neighbours(here) {
-            for &to in maze.pieces_in(next) {
+        let ways = ways_on(maze, here, heading);
+        for &dir in &ways {
+            let Some(next) = grid.neighbour(here, dir) else {
+                continue;
+            };
+            if let [to] = *maze.pieces_in(next) {
+                let joinable = to == from || maze.piece(to).zone == zone;
                 let step = Step {
                     from,
                     cells: cells.clone(),
                     to,
                     zone,
                 };
-                if maze.check_step(&step).is_ok() {
+                if joinable && maze.check_step(&step).is_ok() {
                     longest = Some(step);
                 }
             }
@@ -139,16 +158,17 @@ fn find_step(maze: &Maze, rng: &mut StdRng, zone: usize) -> Option<Step> {
         if cells.len() >= limit {
             break;
         }
-        let onward: Vec<Cell> = grid
-            .neighbours(here)
-            .map(|(_, cell)| cell)
-            .filter(|&cell| {
+        let onward: Vec<(Dir, Cell)> = ways
+            .into_iter()
+            .filter_map(|dir| grid.neighbour(here, dir).map(|cell| (dir, cell)))
+            .filter(|&(_, cell)| {
                 cell != from_cell && !cells.iter().any(|c| c.cell == cell) && can_enter(maze, cell)
             })
             .collect();
-        let Some(&next) = onward.choose(rng) else {
+        let Some(&(dir, next)) = onward.choose(rng) else {
             break;
         };
+        heading = dir;
         cells.push(StepCell {
             cell: next,
             on_top: rng.random_bool(0.5),

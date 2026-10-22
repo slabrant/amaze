@@ -33,6 +33,7 @@ filled. If a zone cannot be started, generation fails.
 3. Each zone joins only the zone before it and the zone after it, at one junction each.
 4. Start is in the first zone. Finish is in the last zone.
 5. No dead ends.
+6. Both paths go straight through a crossing.
 
 ## Goals
 

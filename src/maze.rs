@@ -14,6 +14,10 @@ impl Piece {
     pub fn has_side(&self, dir: Dir) -> bool {
         self.links.iter().any(|&(side, _)| side == dir)
     }
+
+    pub fn is_straight(&self) -> bool {
+        matches!(self.links.as_slice(), [(a, _), (b, _)] if *a == b.opposite())
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,6 +51,7 @@ pub enum StepError {
     CellTaken,
     EndNotJoinable,
     SideTaken,
+    TurnInCrossing,
     WrongZone,
 }
 
@@ -153,6 +158,19 @@ impl Maze {
             .any(|c| !matches!(self.content(c.cell), Content::Empty | Content::Path))
         {
             return Err(StepError::CellTaken);
+        }
+        let route: Vec<Cell> = std::iter::once(from.cell)
+            .chain(step.cells.iter().map(|c| c.cell))
+            .chain([to.cell])
+            .collect();
+        for (i, c) in step.cells.iter().enumerate() {
+            if let [crossed] = self.pieces_in(c.cell) {
+                let goes_straight = Dir::between(c.cell, route[i]).map(Dir::opposite)
+                    == Dir::between(c.cell, route[i + 2]);
+                if !goes_straight || !self.pieces[*crossed].is_straight() {
+                    return Err(StepError::TurnInCrossing);
+                }
+            }
         }
         for end in [from, to] {
             if self.pieces_in(end.cell).len() != 1 {
@@ -274,14 +292,7 @@ mod tests {
         let mut maze = square();
         let step = Step {
             from: id_at(&maze, cell(2, 1)),
-            cells: over(&[
-                cell(2, 0),
-                cell(3, 0),
-                cell(4, 0),
-                cell(4, 1),
-                cell(4, 2),
-                cell(3, 2),
-            ]),
+            cells: over(&[cell(2, 0), cell(3, 0)]),
             to: id_at(&maze, cell(2, 3)),
             zone: 0,
         };
@@ -428,5 +439,30 @@ mod tests {
             zone: 1,
         };
         assert_eq!(maze.check_step(&across_zones), Err(StepError::WrongZone));
+    }
+
+    #[test]
+    fn paths_go_straight_through_a_crossing() {
+        let maze = square();
+        let turning_over_a_path = Step {
+            from: id_at(&maze, cell(1, 1)),
+            cells: over(&[cell(0, 1), cell(0, 2), cell(1, 2)]),
+            to: id_at(&maze, cell(1, 3)),
+            zone: 0,
+        };
+        assert_eq!(
+            maze.check_step(&turning_over_a_path),
+            Err(StepError::TurnInCrossing)
+        );
+        let over_a_turning_path = Step {
+            from: id_at(&maze, cell(3, 2)),
+            cells: over(&[cell(4, 2), cell(4, 3), cell(3, 3)]),
+            to: id_at(&maze, cell(2, 3)),
+            zone: 0,
+        };
+        assert_eq!(
+            maze.check_step(&over_a_turning_path),
+            Err(StepError::TurnInCrossing)
+        );
     }
 }

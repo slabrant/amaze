@@ -5,6 +5,7 @@ use crate::maze::{Content, Maze, PieceId};
 pub enum Broken {
     TooManyPaths(Cell),
     JunctionCrossed(Cell),
+    TurnInCrossing(Cell),
     NoRouteToStart(Cell),
     ZonesJoinedOutOfOrder(Cell),
     ZonesNotJoinedAtOneJunction(usize),
@@ -23,6 +24,9 @@ pub fn broken(maze: &Maze) -> Vec<Broken> {
         }
         if ids.len() > 1 && ids.iter().any(|&id| maze.piece(id).links.len() > 2) {
             found.push(Broken::JunctionCrossed(cell));
+        }
+        if ids.len() > 1 && ids.iter().any(|&id| !maze.piece(id).is_straight()) {
+            found.push(Broken::TurnInCrossing(cell));
         }
     }
     let reached = reached_from(maze, maze.start);
