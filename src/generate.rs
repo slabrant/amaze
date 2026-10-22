@@ -6,6 +6,7 @@ use rand::prelude::*;
 const ATTEMPTS: usize = 1000;
 const ZONE_START_ATTEMPTS: usize = 20_000;
 const CANDIDATES: usize = 40;
+const ALWAYS_SOME: f64 = 0.2;
 const ZONE_START_CANDIDATES: usize = 200;
 const NEAR_ENDS: usize = 8;
 
@@ -31,12 +32,11 @@ pub fn generate(grid: Grid, seed: u64, zones: usize) -> Result<Maze, Failed> {
         .ok_or(Failed)?;
     let mut entry = maze.pieces_in(maze.start)[0];
     for zone in 1..zones {
-        let step = candidates(&maze, &mut rng, zone, ZONE_START_ATTEMPTS)
+        let counts = zone_counts(&maze);
+        let step = candidates(&maze, &mut rng, &counts, zone, ZONE_START_ATTEMPTS)
             .map(|step| {
-                (
-                    zone_start_score(&maze, entry, &step, zone + 1 == zones),
-                    step,
-                )
+                let score = zone_start_score(&maze, entry, &step, zone + 1 == zones);
+                (score, step)
             })
             .max_by(|a, b| a.0.total_cmp(&b.0))
             .map(|(_, step)| step)
@@ -71,6 +71,7 @@ pub fn generate(grid: Grid, seed: u64, zones: usize) -> Result<Maze, Failed> {
 fn candidates<'a>(
     maze: &'a Maze,
     rng: &'a mut StdRng,
+    counts: &'a [Vec<usize>],
     zone: usize,
     attempts: usize,
 ) -> impl Iterator<Item = Step> + 'a {
@@ -81,7 +82,7 @@ fn candidates<'a>(
     };
     let sides = open_sides(maze, zone);
     (0..attempts)
-        .filter_map(move |_| find_step(maze, rng, zone, &sides))
+        .filter_map(move |_| find_step(maze, rng, counts, zone, &sides))
         .take(wanted)
 }
 
@@ -209,7 +210,7 @@ fn near_fraction(near: Vec<bool>) -> f64 {
 fn best_step(maze: &Maze, rng: &mut StdRng, zone: usize) -> Option<Step> {
     let solution = Solution::of(maze);
     let counts = zone_counts(maze);
-    candidates(maze, rng, zone, ATTEMPTS)
+    candidates(maze, rng, &counts, zone, ATTEMPTS)
         .map(|step| (step_score(maze, &solution, &counts, &step), step))
         .max_by(|a, b| a.0.total_cmp(&b.0))
         .map(|(_, step)| step)
@@ -234,6 +235,17 @@ fn step_score(maze: &Maze, solution: &Solution, counts: &[Vec<usize>], step: &St
         + CROSSING_IN_A_ROW_WEIGHT * crossings_in_a_row as f64
         + EMPTY_CELL_WEIGHT * empty_cells as f64
         + MIXING_WEIGHT * mixing(maze, counts, step)
+}
+
+fn foreign_share(counts: &[Vec<usize>], at: usize, zone: usize) -> f64 {
+    let here = &counts[at];
+    let all: usize = here.iter().sum();
+    let own = here.get(zone).copied().unwrap_or(0);
+    if all == 0 {
+        0.0
+    } else {
+        1.0 - own as f64 / all as f64
+    }
 }
 
 fn mixing(maze: &Maze, counts: &[Vec<usize>], step: &Step) -> f64 {
@@ -283,8 +295,8 @@ fn short_route_shortfall(maze: &Maze, step: &Step) -> f64 {
 }
 
 fn first_loop(grid: Grid, rng: &mut StdRng) -> Vec<Cell> {
-    let width = rng.random_range((grid.width - 2).div_ceil(2).max(2)..=grid.width - 2);
-    let height = rng.random_range((grid.height - 2).div_ceil(2).max(2)..=grid.height - 2);
+    let width = grid.width - 2;
+    let height = grid.height - 2;
     let left = rng.random_range(1..=grid.width - 1 - width);
     let top = rng.random_range(1..=grid.height - 1 - height);
     let right = left + width - 1;
@@ -337,9 +349,19 @@ fn ways_on(maze: &Maze, here: Cell, heading: Dir) -> Vec<Dir> {
     }
 }
 
-fn find_step(maze: &Maze, rng: &mut StdRng, zone: usize, sides: &[(PieceId, Dir)]) -> Option<Step> {
+fn find_step(
+    maze: &Maze,
+    rng: &mut StdRng,
+    counts: &[Vec<usize>],
+    zone: usize,
+    sides: &[(PieceId, Dir)],
+) -> Option<Step> {
     let grid = maze.grid;
-    let &(from, out) = sides.choose(rng)?;
+    let &(from, out) = sides
+        .choose_weighted(rng, |&(id, _)| {
+            ALWAYS_SOME + foreign_share(counts, grid.index(maze.piece(id).cell), zone)
+        })
+        .ok()?;
     let from_cell = maze.piece(from).cell;
     let first = grid
         .neighbour(from_cell, out)
@@ -377,7 +399,9 @@ fn find_step(maze: &Maze, rng: &mut StdRng, zone: usize, sides: &[(PieceId, Dir)
             .filter_map(|dir| grid.neighbour(here, dir).map(|cell| (dir, cell)))
             .filter(|&(_, cell)| !visited[grid.index(cell)] && can_enter(maze, cell))
             .collect();
-        let Some(&(dir, next)) = onward.choose(rng) else {
+        let Ok(&(dir, next)) = onward.choose_weighted(rng, |&(_, cell)| {
+            ALWAYS_SOME + foreign_share(counts, grid.index(cell), zone)
+        }) else {
             break;
         };
         heading = dir;
@@ -480,7 +504,7 @@ mod tests {
             all.iter().map(f).sum::<f64>() / all.len() as f64
         };
         println!(
-            "short {:.2} near {:.2} crossings {:.0} in_a_row {:.0} joins {:.1} empty {:.1} ends {:.1} solution {:.0} mixing {:.2} each {:?}",
+            "short {:.2} near {:.2} crossings {:.0} in_a_row {:.0} joins {:.1} empty {:.1} ends {:.1} solution {:.0} least_mixed {:.2} each {:?}",
             average(&|m| m.short_routes_between_neighbours),
             average(&|m| m.maze_cells_near_solution),
             average(&|m| m.crossings as f64),
@@ -489,7 +513,7 @@ mod tests {
             average(&|m| m.empty_cells as f64),
             average(&|m| m.start_to_finish),
             average(&|m| m.solution_length as f64),
-            average(&|m| m.zone_mixing),
+            average(&|m| m.least_mixed_zone),
             started.elapsed() / seeds as u32,
         );
     }

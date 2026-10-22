@@ -15,7 +15,7 @@ pub struct Measures {
     pub zones: usize,
     pub empty_cells: usize,
     pub start_to_finish: f64,
-    pub zone_mixing: f64,
+    pub least_mixed_zone: f64,
     pub solution_length: usize,
 }
 
@@ -50,19 +50,26 @@ pub fn measure(maze: &Maze) -> Measures {
         zones: maze.zones(),
         empty_cells: cells.len() - maze_cells.len(),
         start_to_finish: (maze.start.squared_distance(maze.finish) as f64).sqrt(),
-        zone_mixing: {
+        least_mixed_zone: {
             let counts = zone_counts(maze);
-            maze_cells
-                .iter()
-                .filter(|&&cell| {
-                    counts[maze.grid.index(cell)]
+            (0..maze.zones())
+                .map(|zone| {
+                    let own: Vec<usize> = maze
+                        .pieces()
                         .iter()
-                        .filter(|&&count| count > 0)
-                        .count()
-                        > 1
+                        .filter(|piece| piece.zone == zone)
+                        .map(|piece| maze.grid.index(piece.cell))
+                        .collect();
+                    let foreign: f64 = own
+                        .iter()
+                        .map(|&at| {
+                            let all: usize = counts[at].iter().sum();
+                            1.0 - counts[at][zone] as f64 / all as f64
+                        })
+                        .sum();
+                    foreign / own.len().max(1) as f64
                 })
-                .count() as f64
-                / maze_cells.len() as f64
+                .fold(1.0, f64::min)
         },
         solution_length: solution.len(),
     }
