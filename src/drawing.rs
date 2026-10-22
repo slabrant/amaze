@@ -1,14 +1,18 @@
 use crate::grid::{Cell, Dir, Grid};
-use crate::maze::{Content, Maze, PieceId};
+use crate::maze::{Maze, PieceId};
 
-const PATH: f64 = 0.7;
-const EDGE: f64 = 0.04;
-const UNDER_DASH: [f64; 2] = [0.1, 0.07];
-const HATCH_SPACING: f64 = 0.18;
-const HATCH_WIDTH: f64 = 0.02;
-const MARK: f64 = PATH / 2.0;
+const CORRIDOR: f64 = 0.75;
+const HALF: f64 = CORRIDOR / 2.0;
+const EDGE: f64 = 0.06;
+const UNDER_EDGE: f64 = 0.042;
+const UNDER_DASH: [f64; 2] = [0.08, 0.07];
+const HATCH_SPACING: f64 = 0.16;
+const HATCH_WIDTH: f64 = 0.018;
+const ROUNDING: f64 = 0.12;
+const ARC_STEPS: usize = 6;
+const MARK: f64 = HALF;
 const ROUTE: f64 = 0.3;
-const ROUTE_GAP: f64 = PATH / 2.0 + 0.08;
+const ROUTE_GAP: f64 = HALF + 0.08;
 const ROUTE_HUES: (f64, f64) = (0.0, 0.78);
 
 pub type Point = (f64, f64);
@@ -23,8 +27,8 @@ pub struct Colour {
 impl Colour {
     pub const BLACK: Colour = Colour::grey(0.0);
     pub const WHITE: Colour = Colour::grey(1.0);
-    pub const HATCH: Colour = Colour::grey(0.6);
-    pub const UNDER: Colour = Colour::grey(0.5);
+    pub const HATCH: Colour = Colour::grey(0.75);
+    pub const UNDER: Colour = Colour::grey(0.55);
     pub const START: Colour = Colour {
         red: 0.86,
         green: 0.12,
@@ -79,6 +83,10 @@ pub enum Mark {
         radius: f64,
         colour: Colour,
     },
+    Polygon {
+        points: Vec<Point>,
+        colour: Colour,
+    },
     Square {
         centre: Point,
         half: f64,
@@ -114,6 +122,10 @@ impl Mark {
                 radius: radius * scale,
                 colour: *colour,
             },
+            Mark::Polygon { points, colour } => Mark::Polygon {
+                points: points.iter().map(|&point| place(point)).collect(),
+                colour: *colour,
+            },
             Mark::Square {
                 centre,
                 half,
@@ -129,25 +141,38 @@ impl Mark {
 
 pub fn draw(maze: &Maze) -> Vec<Mark> {
     let mut marks = vec![hatching(maze.grid)];
-    for layer in 0..2 {
-        let shapes: Vec<Vec<Point>> = maze
-            .grid
-            .cells()
-            .filter_map(|cell| maze.pieces_in(cell).get(layer))
-            .flat_map(|&id| outline(maze, id))
-            .collect();
-        marks.push(lines(shapes.clone(), PATH, Colour::BLACK));
-        marks.push(lines(shapes, PATH - 2.0 * EDGE, Colour::WHITE));
+    let mut edges: Vec<Vec<Point>> = vec![frame(maze.grid)];
+    let mut under: Vec<Vec<Point>> = Vec::new();
+    for cell in maze.grid.cells() {
+        let ids = maze.pieces_in(cell);
+        if ids.is_empty() {
+            continue;
+        }
+        let joined = Dir::ALL.map(|dir| ids.iter().any(|&id| maze.piece(id).has_side(dir)));
+        let ring = ring(cell, joined);
+        marks.push(Mark::Polygon {
+            points: ring.iter().map(|&(point, _)| point).collect(),
+            colour: Colour::WHITE,
+        });
+        for (i, dir) in Dir::ALL.into_iter().enumerate() {
+            if joined[i] {
+                marks.push(Mark::Polygon {
+                    points: arm(cell, dir),
+                    colour: Colour::WHITE,
+                });
+                edges.extend(arm_edges(cell, dir));
+            }
+        }
+        edges.extend(wall_faces(&ring));
+        if let [lower, top] = ids {
+            edges.extend(across(cell, maze.piece(*top).has_side(Dir::North)));
+            under.extend(across(cell, maze.piece(*lower).has_side(Dir::North)));
+        }
     }
-    let under: Vec<Vec<Point>> = maze
-        .grid
-        .cells()
-        .filter(|&cell| maze.content(cell) == Content::Crossing)
-        .flat_map(|cell| under_edges(maze, maze.pieces_in(cell)[0]))
-        .collect();
+    marks.push(lines(edges, EDGE, Colour::BLACK));
     marks.push(Mark::Lines {
         lines: under,
-        width: EDGE,
+        width: UNDER_EDGE,
         colour: Colour::UNDER,
         dash: Some(UNDER_DASH),
         round: false,
@@ -155,6 +180,101 @@ pub fn draw(maze: &Maze) -> Vec<Mark> {
     marks.extend(start_mark(centre(maze.start)));
     marks.extend(finish_mark(centre(maze.finish)));
     marks
+}
+
+fn offset(dir: Dir) -> Point {
+    match dir {
+        Dir::North => (0.0, -1.0),
+        Dir::East => (1.0, 0.0),
+        Dir::South => (0.0, 1.0),
+        Dir::West => (-1.0, 0.0),
+    }
+}
+
+fn corner(cell: Cell, a: Dir, b: Dir) -> Point {
+    let (x, y) = centre(cell);
+    let ((ax, ay), (bx, by)) = (offset(a), offset(b));
+    (x + (ax + bx) * HALF, y + (ay + by) * HALF)
+}
+
+fn ring(cell: Cell, joined: [bool; 4]) -> Vec<(Point, bool)> {
+    let mut points = Vec::new();
+    for i in 0..4 {
+        let before = Dir::ALL[(i + 3) % 4];
+        let after = Dir::ALL[i];
+        let wall_before = !joined[(i + 3) % 4];
+        let wall_after = !joined[i];
+        let (cx, cy) = corner(cell, before, after);
+        if wall_before && wall_after {
+            let ((bx, by), (ax, ay)) = (offset(before), offset(after));
+            let (ox, oy) = (cx - (bx + ax) * ROUNDING, cy - (by + ay) * ROUNDING);
+            for step in 0..=ARC_STEPS {
+                let angle = std::f64::consts::FRAC_PI_2 * step as f64 / ARC_STEPS as f64;
+                let (toward_before, toward_after) = (angle.cos(), angle.sin());
+                points.push((
+                    (
+                        ox + (bx * toward_before + ax * toward_after) * ROUNDING,
+                        oy + (by * toward_before + ay * toward_after) * ROUNDING,
+                    ),
+                    true,
+                ));
+            }
+        } else {
+            points.push(((cx, cy), wall_after));
+        }
+    }
+    points
+}
+
+fn wall_faces(ring: &[(Point, bool)]) -> Vec<Vec<Point>> {
+    (0..ring.len())
+        .filter(|&i| ring[i].1)
+        .map(|i| vec![ring[i].0, ring[(i + 1) % ring.len()].0])
+        .collect()
+}
+
+fn arm(cell: Cell, dir: Dir) -> Vec<Point> {
+    let (left, right) = (dir.turned_left(), dir.turned_right());
+    let (dx, dy) = offset(dir);
+    let reach = 0.5 - HALF;
+    let near_left = corner(cell, dir, left);
+    let near_right = corner(cell, dir, right);
+    vec![
+        near_left,
+        near_right,
+        (near_right.0 + dx * reach, near_right.1 + dy * reach),
+        (near_left.0 + dx * reach, near_left.1 + dy * reach),
+    ]
+}
+
+fn arm_edges(cell: Cell, dir: Dir) -> Vec<Vec<Point>> {
+    let points = arm(cell, dir);
+    vec![vec![points[0], points[3]], vec![points[1], points[2]]]
+}
+
+fn across(cell: Cell, north_south: bool) -> Vec<Vec<Point>> {
+    let (x, y) = centre(cell);
+    [-HALF, HALF]
+        .into_iter()
+        .map(|side| {
+            if north_south {
+                vec![(x + side, y - HALF), (x + side, y + HALF)]
+            } else {
+                vec![(x - HALF, y + side), (x + HALF, y + side)]
+            }
+        })
+        .collect()
+}
+
+fn frame(grid: Grid) -> Vec<Point> {
+    let (width, height) = (grid.width as f64, grid.height as f64);
+    vec![
+        (0.0, 0.0),
+        (width, 0.0),
+        (width, height),
+        (0.0, height),
+        (0.0, 0.0),
+    ]
 }
 
 pub fn draw_solution(maze: &Maze) -> Vec<Mark> {
@@ -190,7 +310,7 @@ pub fn draw_zones(maze: &Maze, colours: &[Colour]) -> Vec<Mark> {
     for (id, piece) in maze.pieces().iter().enumerate() {
         marks.push(lines(
             outline(maze, id),
-            PATH / 2.0,
+            HALF,
             colours[piece.zone % colours.len()],
         ));
     }
@@ -237,24 +357,6 @@ fn hatching(grid: Grid) -> Mark {
         dash: None,
         round: false,
     }
-}
-
-fn under_edges(maze: &Maze, id: PieceId) -> Vec<Vec<Point>> {
-    let piece = maze.piece(id);
-    let (x, y) = centre(piece.cell);
-    let inset = PATH / 2.0 - EDGE / 2.0;
-    let across = PATH / 2.0;
-    let runs_north_south = piece.has_side(Dir::North);
-    [-inset, inset]
-        .into_iter()
-        .map(|offset| {
-            if runs_north_south {
-                vec![(x + offset, y - across), (x + offset, y + across)]
-            } else {
-                vec![(x - across, y + offset), (x + across, y + offset)]
-            }
-        })
-        .collect()
 }
 
 fn start_mark(at: Point) -> Vec<Mark> {

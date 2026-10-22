@@ -8,34 +8,46 @@ use crate::pdf::A4;
 
 const MILLIMETRE: f64 = 72.0 / 25.4;
 const MARGIN: f64 = 15.0 * MILLIMETRE;
-const SMALL_GAP: f64 = 10.0 * MILLIMETRE;
+const MINI_GAP: f64 = 10.0 * MILLIMETRE;
 const SIDE_PER_ZONE: f64 = 4.5;
 const RETRIES: u64 = 20;
 
 pub const TRIVIAL: Grid = Grid {
-    width: 10,
+    width: 12,
     height: 15,
 };
 pub const EASY: Grid = Grid {
-    width: 15,
-    height: 22,
+    width: 16,
+    height: 20,
 };
 pub const STANDARD: Grid = Grid {
     width: 20,
-    height: 30,
+    height: 26,
 };
 pub const HARD: Grid = Grid {
-    width: 26,
-    height: 38,
+    width: 24,
+    height: 31,
 };
-pub const SMALL: Grid = Grid {
+pub const MINI_TRIVIAL: Grid = Grid {
+    width: 8,
+    height: 10,
+};
+pub const MINI_EASY: Grid = Grid {
     width: 10,
-    height: 14,
+    height: 13,
+};
+pub const MINI_STANDARD: Grid = Grid {
+    width: 12,
+    height: 15,
+};
+pub const MINI_HARD: Grid = Grid {
+    width: 13,
+    height: 16,
 };
 
 pub struct Contents {
     pub per_level: usize,
-    pub small_pages: usize,
+    pub minis_per_level: usize,
 }
 
 struct Slot {
@@ -54,11 +66,13 @@ pub fn book(seed: u64, contents: &Contents) -> Vec<Vec<Mark>> {
             pages.extend(sheet(&[maze], &[whole_page()]));
         }
     }
-    for _ in 0..contents.small_pages {
-        let mazes: Vec<Maze> = (0..4)
-            .map(|_| maze(SMALL, seeds.next().unwrap_or(seed)))
-            .collect();
-        pages.extend(sheet(&mazes, &quarter_pages()));
+    let minis: Vec<Maze> = [MINI_TRIVIAL, MINI_EASY, MINI_STANDARD, MINI_HARD]
+        .into_iter()
+        .flat_map(|grid| std::iter::repeat_n(grid, contents.minis_per_level))
+        .map(|grid| maze(grid, seeds.next().unwrap_or(seed)))
+        .collect();
+    for page in minis.chunks(4) {
+        pages.extend(sheet(page, &quarter_pages()));
     }
     pages
 }
@@ -109,11 +123,11 @@ fn whole_page() -> Slot {
 
 fn quarter_pages() -> [Slot; 4] {
     let page = whole_page();
-    let width = (page.width - SMALL_GAP) / 2.0;
-    let height = (page.height - SMALL_GAP) / 2.0;
+    let width = (page.width - MINI_GAP) / 2.0;
+    let height = (page.height - MINI_GAP) / 2.0;
     let slot = |column: f64, row: f64| Slot {
-        left: page.left + column * (width + SMALL_GAP),
-        top: page.top + row * (height + SMALL_GAP),
+        left: page.left + column * (width + MINI_GAP),
+        top: page.top + row * (height + MINI_GAP),
         width,
         height,
     };
@@ -131,11 +145,20 @@ mod tests {
 
     #[test]
     fn bigger_levels_have_more_zones() {
-        let zones: Vec<usize> = [TRIVIAL, SMALL, EASY, STANDARD, HARD]
-            .into_iter()
-            .map(zones_for)
-            .collect();
-        assert_eq!(zones, vec![3, 3, 4, 5, 7]);
+        let zones: Vec<usize> = [
+            MINI_TRIVIAL,
+            MINI_EASY,
+            MINI_STANDARD,
+            MINI_HARD,
+            TRIVIAL,
+            EASY,
+            STANDARD,
+            HARD,
+        ]
+        .into_iter()
+        .map(zones_for)
+        .collect();
+        assert_eq!(zones, vec![2, 3, 3, 3, 3, 4, 5, 6]);
     }
 
     #[test]
@@ -144,7 +167,7 @@ mod tests {
             0,
             &Contents {
                 per_level: 1,
-                small_pages: 1,
+                minis_per_level: 1,
             },
         );
         assert_eq!(pages.len(), 10);

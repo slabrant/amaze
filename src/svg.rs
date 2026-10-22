@@ -95,6 +95,16 @@ fn svg(maze: &Maze, marks: &[Mark]) -> String {
                 hex(colour)
             )
             .unwrap(),
+            Mark::Polygon { points, colour } => {
+                let corners: Vec<String> = points.iter().map(|(x, y)| format!("{x},{y}")).collect();
+                write!(
+                    svg,
+                    r#"<polygon points="{}" fill="{}"/>"#,
+                    corners.join(" "),
+                    hex(colour)
+                )
+                .unwrap();
+            }
             Mark::Square {
                 centre: (x, y),
                 half,

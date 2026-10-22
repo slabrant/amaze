@@ -3,7 +3,7 @@ use amaze::pdf::pdf;
 use std::process::ExitCode;
 
 const PER_LEVEL: usize = 5;
-const SMALL_PAGES: usize = 5;
+const MINIS_PER_LEVEL: usize = 4;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -21,7 +21,7 @@ fn main() -> ExitCode {
     };
     let contents = Contents {
         per_level: PER_LEVEL,
-        small_pages: SMALL_PAGES,
+        minis_per_level: MINIS_PER_LEVEL,
     };
     match std::fs::write(out, pdf(&book(seed, &contents))) {
         Ok(()) => ExitCode::SUCCESS,

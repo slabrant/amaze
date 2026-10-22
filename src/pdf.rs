@@ -117,6 +117,15 @@ fn content(marks: &[Mark], height: f64) -> String {
                 )
                 .unwrap();
             }
+            Mark::Polygon { points, colour } => {
+                write!(out, "{} rg ", rgb(*colour)).unwrap();
+                for (i, &point) in points.iter().enumerate() {
+                    let (x, y) = up(point);
+                    let verb = if i == 0 { "m" } else { "l" };
+                    write!(out, "{x:.2} {y:.2} {verb} ").unwrap();
+                }
+                out.push_str("h f\n");
+            }
             Mark::Square {
                 centre,
                 half,
