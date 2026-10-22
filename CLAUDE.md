@@ -1,0 +1,2 @@
+- No comments in code. The code itself should be clear.
+- One word per thing. Use the words defined in README.md, and no synonyms for them.
