@@ -18,29 +18,7 @@ const EMPTY_CELL_WEIGHT: f64 = 0.5;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Failed;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Settings {
-    pub zones: usize,
-    pub shortest_circuit: usize,
-    pub stop_at_shortfall: Option<f64>,
-}
-
-impl Settings {
-    pub fn zones(zones: usize) -> Settings {
-        Settings {
-            zones,
-            shortest_circuit: 0,
-            stop_at_shortfall: None,
-        }
-    }
-}
-
 pub fn generate(grid: Grid, seed: u64, zones: usize) -> Result<Maze, Failed> {
-    generate_with(grid, seed, Settings::zones(zones))
-}
-
-pub fn generate_with(grid: Grid, seed: u64, settings: Settings) -> Result<Maze, Failed> {
-    let zones = settings.zones;
     if grid.width < 4 || grid.height < 4 || zones == 0 {
         return Err(Failed);
     }
@@ -51,7 +29,7 @@ pub fn generate_with(grid: Grid, seed: u64, settings: Settings) -> Result<Maze, 
         .ok_or(Failed)?;
     let mut entry = maze.pieces_in(maze.start)[0];
     for zone in 1..zones {
-        let step = candidates(&maze, &mut rng, zone, ZONE_START_ATTEMPTS, |_| true)
+        let step = candidates(&maze, &mut rng, zone, ZONE_START_ATTEMPTS)
             .max_by_key(|step| zone_start_score(&maze, entry, step))
             .ok_or(Failed)?;
         entry = step.from;
@@ -69,7 +47,7 @@ pub fn generate_with(grid: Grid, seed: u64, settings: Settings) -> Result<Maze, 
         });
         let mut stepped = false;
         for &zone in &turns {
-            if let Some(step) = best_step(&maze, &mut rng, zone, settings) {
+            if let Some(step) = best_step(&maze, &mut rng, zone) {
                 maze.make_step(&step).map_err(|_| Failed)?;
                 stepped = true;
             }
@@ -86,7 +64,6 @@ fn candidates<'a>(
     rng: &'a mut StdRng,
     zone: usize,
     attempts: usize,
-    keep: impl Fn(&Step) -> bool + 'a,
 ) -> impl Iterator<Item = Step> + 'a {
     let wanted = if zone == maze.zones() {
         ZONE_START_CANDIDATES
@@ -95,7 +72,6 @@ fn candidates<'a>(
     };
     (0..attempts)
         .filter_map(move |_| find_step(maze, rng, zone))
-        .filter(keep)
         .take(wanted)
 }
 
@@ -144,14 +120,8 @@ fn path_cells_in_zone(maze: &Maze, zone: usize) -> Vec<Cell> {
         .collect()
 }
 
-fn best_step(maze: &Maze, rng: &mut StdRng, zone: usize, settings: Settings) -> Option<Step> {
-    let keep = |step: &Step| {
-        circuit(maze, step) >= settings.shortest_circuit
-            && settings
-                .stop_at_shortfall
-                .is_none_or(|most| short_route_shortfall(maze, step) <= most)
-    };
-    candidates(maze, rng, zone, ATTEMPTS, keep)
+fn best_step(maze: &Maze, rng: &mut StdRng, zone: usize) -> Option<Step> {
+    candidates(maze, rng, zone, ATTEMPTS)
         .map(|step| (step_score(maze, &step), step))
         .max_by(|a, b| a.0.total_cmp(&b.0))
         .map(|(_, step)| step)
@@ -180,10 +150,6 @@ fn step_score(maze: &Maze, step: &Step) -> f64 {
         + CROSSING_WEIGHT * crossings as f64
         + CROSSING_IN_A_ROW_WEIGHT * crossings_in_a_row as f64
         + EMPTY_CELL_WEIGHT * empty_cells as f64
-}
-
-fn circuit(maze: &Maze, step: &Step) -> usize {
-    step.cells.len() + 1 + route_distances(maze, step.from)[step.to]
 }
 
 fn short_route_shortfall(maze: &Maze, step: &Step) -> f64 {
@@ -394,47 +360,6 @@ mod tests {
         for seed in 0..5 {
             let maze = generate(GRID, seed, 3).unwrap();
             println!("seed {seed} {:?}", crate::goals::measure(&maze));
-        }
-    }
-
-    #[test]
-    #[ignore]
-    fn compares_settings() {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/svg/compare");
-        std::fs::create_dir_all(&dir).unwrap();
-        for shortest_circuit in [0, 8, 12] {
-            for stop_at_shortfall in [None, Some(6.0), Some(3.0)] {
-                let settings = Settings {
-                    zones: 3,
-                    shortest_circuit,
-                    stop_at_shortfall,
-                };
-                let all: Vec<_> = (0..10)
-                    .map(|seed| {
-                        crate::goals::measure(&generate_with(GRID, seed, settings).unwrap())
-                    })
-                    .collect();
-                let average = |f: &dyn Fn(&crate::goals::Measures) -> f64| {
-                    all.iter().map(f).sum::<f64>() / all.len() as f64
-                };
-                println!(
-                    "COMPARE circuit {shortest_circuit:>2} stop {:<9} short {:.2} near {:.2} crossings {:.0} in_a_row {:.0} joins {:.1} empty {:.1} ends {:.1}",
-                    format!("{stop_at_shortfall:?}"),
-                    average(&|m| m.short_routes_between_neighbours),
-                    average(&|m| m.maze_cells_near_solution),
-                    average(&|m| m.crossings as f64),
-                    average(&|m| m.crossings_in_a_row as f64),
-                    average(&|m| m.nearest_zone_joins.unwrap_or(0.0)),
-                    average(&|m| m.empty_cells as f64),
-                    average(&|m| m.start_to_finish),
-                );
-                let maze = generate_with(GRID, 0, settings).unwrap();
-                let name = format!(
-                    "circuit-{shortest_circuit}-stop-{}.svg",
-                    stop_at_shortfall.unwrap_or(0.0)
-                );
-                std::fs::write(dir.join(name), render_solution(&maze)).unwrap();
-            }
         }
     }
 

@@ -16,6 +16,7 @@ Printable mazes where paths go over and under each other.
 - Start, finish: the cells where the solver begins and ends.
 - Solution: the route from start to finish.
 - Zone: a part of the maze spread among the other zones, not kept in one area. Zones are in order, first to last. Two zones join at a junction of one that is joined to cells of the other.
+- Circuit: a step's path together with the shortest route between its two ends, before the step.
 - Step: adding a path whose two ends are joined to the maze. The cells its ends join become junctions, splitting the paths they were on. Its cells are empty cells or cells with one path in them; those become crossings.
 
 ## Building
@@ -34,6 +35,7 @@ filled. If a zone cannot be started, generation fails.
 4. Start is in the first zone. Finish is in the last zone.
 5. No dead ends.
 6. Both paths go straight through a crossing.
+7. Every step's circuit is at least 8 cells.
 
 ## Goals
 

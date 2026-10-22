@@ -3,6 +3,8 @@ use std::collections::{HashSet, VecDeque};
 
 pub type PieceId = usize;
 
+pub const SHORTEST_CIRCUIT: usize = 8;
+
 #[derive(Clone, Debug)]
 pub struct Piece {
     pub cell: Cell,
@@ -53,6 +55,7 @@ pub enum StepError {
     SideTaken,
     TurnInCrossing,
     WrongZone,
+    CircuitTooShort,
 }
 
 #[derive(Clone, Debug)]
@@ -220,7 +223,27 @@ impl Maze {
         if !zone_fits {
             return Err(StepError::WrongZone);
         }
+        let route_needed = SHORTEST_CIRCUIT.saturating_sub(step.cells.len() + 1);
+        if self.route_shorter_than(step.from, step.to, route_needed) {
+            return Err(StepError::CircuitTooShort);
+        }
         Ok(())
+    }
+
+    fn route_shorter_than(&self, from: PieceId, to: PieceId, length: usize) -> bool {
+        let mut reached = HashSet::from([from]);
+        let mut edge = vec![from];
+        for _ in 0..length {
+            if edge.contains(&to) {
+                return true;
+            }
+            edge = edge
+                .iter()
+                .flat_map(|&id| self.pieces[id].links.iter().map(|&(_, next)| next))
+                .filter(|&next| reached.insert(next))
+                .collect();
+        }
+        false
     }
 
     pub fn make_step(&mut self, step: &Step) -> Result<(), StepError> {
@@ -311,7 +334,7 @@ mod tests {
     }
 
     #[test]
-    fn step_across_the_loop_makes_a_crossing_and_junctions() {
+    fn step_makes_junctions_at_its_ends() {
         let mut maze = square();
         let step = Step {
             from: id_at(&maze, cell(2, 1)),
@@ -322,14 +345,25 @@ mod tests {
         assert_eq!(maze.check_step(&step), Err(StepError::NotNeighbours));
         let step = Step {
             from: id_at(&maze, cell(2, 1)),
-            cells: over(&[cell(2, 2)]),
+            cells: over(&[
+                cell(2, 0),
+                cell(1, 0),
+                cell(0, 0),
+                cell(0, 1),
+                cell(0, 2),
+                cell(0, 3),
+                cell(0, 4),
+                cell(1, 4),
+                cell(2, 4),
+            ]),
             to: id_at(&maze, cell(2, 3)),
             zone: 0,
         };
         maze.make_step(&step).unwrap();
         assert_eq!(maze.content(cell(2, 1)), Content::Junction);
         assert_eq!(maze.content(cell(2, 3)), Content::Junction);
-        assert!(maze.joined(cell(2, 1), cell(2, 2)));
+        assert!(maze.joined(cell(2, 1), cell(2, 0)));
+        assert!(maze.joined(cell(2, 4), cell(2, 3)));
     }
 
     #[test]
@@ -405,8 +439,15 @@ mod tests {
         assert_eq!(maze.check_step(&step), Err(StepError::SideTaken));
         let step = Step {
             from: id_at(&maze, cell(2, 1)),
-            cells: over(&[cell(2, 0), cell(1, 0), cell(0, 0), cell(0, 1)]),
-            to: id_at(&maze, cell(1, 1)),
+            cells: over(&[
+                cell(2, 0),
+                cell(1, 0),
+                cell(0, 0),
+                cell(0, 1),
+                cell(0, 2),
+                cell(0, 3),
+            ]),
+            to: id_at(&maze, cell(1, 3)),
             zone: 0,
         };
         assert_eq!(maze.check_step(&step), Ok(()));
@@ -487,5 +528,24 @@ mod tests {
             maze.check_step(&over_a_turning_path),
             Err(StepError::TurnInCrossing)
         );
+    }
+
+    #[test]
+    fn circuit_must_be_long_enough() {
+        let maze = square();
+        let short = Step {
+            from: id_at(&maze, cell(2, 1)),
+            cells: over(&[cell(2, 0), cell(3, 0), cell(4, 0), cell(4, 1)]),
+            to: id_at(&maze, cell(3, 1)),
+            zone: 0,
+        };
+        assert_eq!(maze.check_step(&short), Err(StepError::CircuitTooShort));
+        let long_enough = Step {
+            from: id_at(&maze, cell(2, 1)),
+            cells: over(&[cell(2, 0), cell(3, 0), cell(4, 0), cell(4, 1), cell(4, 2)]),
+            to: id_at(&maze, cell(3, 2)),
+            zone: 0,
+        };
+        assert_eq!(maze.check_step(&long_enough), Ok(()));
     }
 }
