@@ -1,7 +1,7 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
-use crate::maze::{walk_length, Maze};
+use crate::maze::{walk_length, Bridge, Maze};
 
 pub const MANY_FORKS: f64 = 0.22;
 pub const LONG_SHORTEST_LOOPS: f64 = 0.14;
@@ -151,10 +151,14 @@ pub fn contact_per_cell(contact: &[usize], cells: &[usize]) -> f64 {
 pub fn score(m: &Maze) -> Scores {
     let n = m.zone.len();
     let maze_cells = (0..n).filter(|&c| !m.is_solid(c)).count().max(1);
-    let levels: usize = (0..n).map(|c| if m.is_solid(c) { 0 } else if m.bridges_overhead[c] != 0 { 2 } else { 1 }).sum();
+    let levels: usize = (0..n).map(|c| usize::from(!m.is_solid(c)) + m.bridges_overhead[c].count_ones() as usize).sum();
     let forks = (0..n).filter(|&c| m.degree(c) >= 3).count();
     let route = m.solve().unwrap_or_default();
-    let zone_crossing_cells: usize = m.bridges.iter().map(|b| b.spans.iter().filter(|&&x| m.zone[x] != m.zone[b.top_or_left]).count()).sum();
+    let zone_crossing_cells: usize = m
+        .bridges
+        .iter()
+        .map(|b| b.spans.iter().filter(|&&x| zone_under(m, b, x).is_some_and(|under| under != m.zone[b.top_or_left])).count())
+        .sum();
     let extra_bridge_cells: usize = m.bridges.iter().map(|b| b.spans.len() - 1).sum();
     let per_maze_cell = |count: usize, full_marks: f64| (count as f64 / maze_cells as f64 / full_marks).min(1.0);
     Scores {
@@ -212,6 +216,15 @@ fn walking_distance_without_link(m: &Maze, a: usize, b: usize) -> usize {
     usize::MAX
 }
 
+fn zone_under(m: &Maze, bridge: &Bridge, x: usize) -> Option<u8> {
+    let other_bridge = m.bridges.iter().find(|b| b.orientation != bridge.orientation && b.spans.contains(&x));
+    match other_bridge {
+        Some(b) => Some(m.zone[b.top_or_left]),
+        None if !m.is_solid(x) => Some(m.zone[x]),
+        None => None,
+    }
+}
+
 fn weakest_zone_contact(m: &Maze) -> f64 {
     let mut contact = vec![0usize; m.zone_count];
     let mut cells = vec![0usize; m.zone_count];
@@ -227,8 +240,7 @@ fn weakest_zone_contact(m: &Maze) -> f64 {
     for b in &m.bridges {
         let over = m.zone[b.top_or_left] as usize;
         for &x in &b.spans {
-            let under = m.zone[x] as usize;
-            if under != over {
+            if let Some(under) = zone_under(m, b, x).map(usize::from).filter(|&under| under != over) {
                 contact[over] += 1;
                 contact[under] += 1;
             }
