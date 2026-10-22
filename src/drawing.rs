@@ -8,7 +8,8 @@ const UNDER_EDGE: f64 = 0.042;
 const UNDER_DASH: [f64; 2] = [0.08, 0.07];
 const HATCH_SPACING: f64 = 0.16;
 const HATCH_WIDTH: f64 = 0.018;
-const ROUNDING: f64 = 0.12;
+const ROUNDING: f64 = 0.25;
+const OVERLAP: f64 = 0.02;
 const ARC_STEPS: usize = 6;
 const MARK: f64 = HALF;
 const ROUTE: f64 = 0.3;
@@ -157,7 +158,7 @@ pub fn draw(maze: &Maze) -> Vec<Mark> {
         for (i, dir) in Dir::ALL.into_iter().enumerate() {
             if joined[i] {
                 marks.push(Mark::Polygon {
-                    points: arm(cell, dir),
+                    points: overlapping(arm(cell, dir), dir),
                     colour: Colour::WHITE,
                 });
                 edges.extend(arm_edges(cell, dir));
@@ -244,6 +245,17 @@ fn arm(cell: Cell, dir: Dir) -> Vec<Point> {
         near_right,
         (near_right.0 + dx * reach, near_right.1 + dy * reach),
         (near_left.0 + dx * reach, near_left.1 + dy * reach),
+    ]
+}
+
+fn overlapping(arm: Vec<Point>, dir: Dir) -> Vec<Point> {
+    let (dx, dy) = offset(dir);
+    let (ox, oy) = (dx * OVERLAP, dy * OVERLAP);
+    vec![
+        (arm[0].0 - ox, arm[0].1 - oy),
+        (arm[1].0 - ox, arm[1].1 - oy),
+        (arm[2].0 + ox, arm[2].1 + oy),
+        (arm[3].0 + ox, arm[3].1 + oy),
     ]
 }
 
