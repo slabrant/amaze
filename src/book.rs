@@ -173,13 +173,15 @@ mod tests {
         assert_eq!(pages.len(), 10);
         for sheet in pages.chunks(2) {
             let starts: Vec<Point> = sheet[0]
-                .iter()
-                .filter_map(|mark| match mark {
-                    Mark::Square {
-                        centre,
-                        colour: Colour::START,
-                        ..
-                    } => Some(*centre),
+                .windows(2)
+                .filter_map(|pair| match pair {
+                    [
+                        Mark::Polygon {
+                            colour: Colour::START,
+                            ..
+                        },
+                        Mark::Disc { centre, .. },
+                    ] => Some(*centre),
                     _ => None,
                 })
                 .collect();

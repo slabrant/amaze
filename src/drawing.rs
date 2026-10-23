@@ -201,8 +201,8 @@ pub fn draw(maze: &Maze) -> Vec<Mark> {
         dash: Some(UNDER_DASH),
         round: false,
     });
-    marks.extend(start_mark(centre(maze.start)));
-    marks.extend(finish_mark(centre(maze.finish)));
+    marks.extend(start_mark(maze, maze.start));
+    marks.extend(finish_mark(maze, maze.finish));
     marks
 }
 
@@ -420,13 +420,22 @@ fn hatching(grid: Grid) -> Mark {
     }
 }
 
-fn start_mark(at: Point) -> Vec<Mark> {
+fn cell_shape(maze: &Maze, cell: Cell, colour: Colour) -> Mark {
+    let ids = maze.pieces_in(cell);
+    let joined = Dir::ALL.map(|dir| ids.iter().any(|&id| maze.piece(id).has_side(dir)));
+    Mark::Polygon {
+        points: ring(cell, joined)
+            .into_iter()
+            .map(|(point, _)| point)
+            .collect(),
+        colour,
+    }
+}
+
+fn start_mark(maze: &Maze, cell: Cell) -> Vec<Mark> {
+    let at = centre(cell);
     vec![
-        Mark::Square {
-            centre: at,
-            half: MARK,
-            colour: Colour::START,
-        },
+        cell_shape(maze, cell, Colour::START),
         Mark::Disc {
             centre: at,
             radius: MARK * 0.45,
@@ -435,13 +444,10 @@ fn start_mark(at: Point) -> Vec<Mark> {
     ]
 }
 
-fn finish_mark(at: Point) -> Vec<Mark> {
+fn finish_mark(maze: &Maze, cell: Cell) -> Vec<Mark> {
+    let at = centre(cell);
     vec![
-        Mark::Square {
-            centre: at,
-            half: MARK,
-            colour: Colour::FINISH,
-        },
+        cell_shape(maze, cell, Colour::FINISH),
         Mark::Disc {
             centre: at,
             radius: MARK * 0.7,
