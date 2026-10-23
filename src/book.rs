@@ -80,10 +80,30 @@ pub fn book(seed: u64, contents: &Contents) -> Vec<Vec<Mark>> {
     pages
 }
 
-pub fn shaped_book(seed: u64, shape: Shape) -> Option<Vec<Vec<Mark>>> {
-    let maze = (0..RETRIES)
-        .find_map(|retry| generate_shaped(STANDARD, seed * RETRIES + retry, shape).ok())?;
-    Some(sheet(&[maze], &[whole_page()]).to_vec())
+pub fn shaped_book(seed: u64, shapes: &[Shape]) -> Result<Vec<Vec<Mark>>, Shape> {
+    let made: Vec<Result<Maze, Shape>> = std::thread::scope(|scope| {
+        let workers: Vec<_> = shapes
+            .iter()
+            .map(|&shape| {
+                scope.spawn(move || {
+                    (0..RETRIES)
+                        .find_map(|retry| {
+                            generate_shaped(STANDARD, seed * RETRIES + retry, shape).ok()
+                        })
+                        .ok_or(shape)
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            .map(|worker| worker.join().expect("maze worker finishes"))
+            .collect()
+    });
+    let mut pages = Vec::new();
+    for maze in made {
+        pages.extend(sheet(&[maze?], &[whole_page()]));
+    }
+    Ok(pages)
 }
 
 fn mazes(jobs: &[(Grid, u64)]) -> Vec<Maze> {

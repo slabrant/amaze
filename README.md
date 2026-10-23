@@ -18,6 +18,7 @@ Printable mazes where paths go over and under each other.
 - Zone: a part of the maze spread among the other zones, not kept in one area. Zones are in order, first to last. Two zones join at a junction of one that is joined to cells of the other.
 - Circuit: a step's path together with the shortest route between its two ends, before the step.
 - Shape: a letter or figure drawn as one unbroken line through cells. A shaped maze's solution is its shape.
+- Bubble: a shape that runs round the outline of a thick letter, its start and finish one cell apart. A hole in the letter is reached through a slit one cell wide.
 - Step: adding a path whose two ends are joined to the maze. The cells its ends join become junctions, splitting the paths they were on. Its cells are empty cells or cells with one path in them; those become crossings.
 
 ## Building
@@ -29,8 +30,9 @@ or changed. Steps are made until no step is allowed, when the area is nearly
 filled. If a zone cannot be started, generation fails.
 
 A shaped maze starts with a loop made of its shape and a route back from the
-finish to the start, longer than the shape. Its steps are only those that leave
-the solution as it is.
+finish to the start, longer than the shape. A bubble's route back goes through
+the cell between its start and finish, so it can use both the inside and the
+outside of the letter. Its steps are only those that leave the solution as it is.
 
 ## Rules
 
@@ -67,7 +69,7 @@ the solution as it is.
 
 - A book: Trivial, Easy, Standard and Hard one to a page, then mini Trivial, Easy, Standard and Hard four to a page.
 - Each solution is printed mirrored on the back of its page.
-- Given a shape (`amaze <maze.pdf> <seed> <shape>`), one Standard shaped maze instead. Shapes: C G J L M N S U V W Z 2 7 spiral.
+- Given shapes (`amaze <maze.pdf> <seed> <shape,shape,...>`, or `all`), one Standard shaped maze per page instead. Shapes: C G J L M N S U V W Z 2 7 spiral, and bubble-A to bubble-Z.
 - The back shows only the solution: a thick line whose colour runs from red at the start to purple at the finish, with a gap where it goes under another path. Being mirrored, it lines up when the page is held to the light.
 
 ## Exceptions

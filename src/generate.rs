@@ -54,7 +54,7 @@ pub fn generate_shaped(grid: Grid, seed: u64, shape: Shape) -> Result<Maze, Fail
     }
     let mut rng = StdRng::seed_from_u64(seed);
     let solution = shape.cells(grid);
-    let cells = shaped_loop(grid, &solution, &mut rng).ok_or(Failed)?;
+    let cells = shaped_loop(grid, &solution, shape.gap(grid), &mut rng).ok_or(Failed)?;
     let mut maze = Maze::with_loop(grid, &cells).map_err(|_| Failed)?;
     maze.finish = solution[solution.len() - 1];
     if maze.solution().len() != solution.len() {
@@ -169,31 +169,32 @@ fn first_loop(grid: Grid, rng: &mut StdRng) -> Vec<Cell> {
     cells
 }
 
-fn shaped_loop(grid: Grid, solution: &[Cell], rng: &mut StdRng) -> Option<Vec<Cell>> {
+fn shaped_loop(
+    grid: Grid,
+    solution: &[Cell],
+    gap: Option<Cell>,
+    rng: &mut StdRng,
+) -> Option<Vec<Cell>> {
     let (&start, &finish) = (solution.first()?, solution.last()?);
-    let taken: HashSet<Cell> = solution.iter().copied().collect();
-    let mut came_from: HashMap<Cell, Cell> = HashMap::new();
-    let mut queue = VecDeque::from([finish]);
-    while let Some(here) = queue.pop_front() {
-        if here == start {
-            break;
+    let taken: HashSet<Cell> = solution.iter().copied().chain(gap).collect();
+    let free = |cell: Cell| inside(grid, cell) && !taken.contains(&cell);
+    let back = match gap {
+        None => route(grid, finish, start, free)?,
+        Some(gap) => {
+            let outer = &outside(grid, &taken);
+            [(true, false), (false, true)]
+                .into_iter()
+                .find_map(|(first, second)| {
+                    let side =
+                        |out: bool| move |cell: Cell| free(cell) && outer[grid.index(cell)] == out;
+                    let to_gap = long_route(grid, finish, gap, side(first))?;
+                    let to_start = long_route(grid, gap, start, side(second))?;
+                    Some(to_gap.into_iter().chain([gap]).chain(to_start).collect())
+                })?
         }
-        for (_, next) in grid.neighbours(here) {
-            let open = next == start || (inside(grid, next) && !taken.contains(&next));
-            if open && !came_from.contains_key(&next) && next != finish {
-                came_from.insert(next, here);
-                queue.push_back(next);
-            }
-        }
-    }
-    let mut back = Vec::new();
-    let mut at = *came_from.get(&start)?;
-    while at != finish {
-        back.push(at);
-        at = came_from[&at];
-    }
+    };
     let mut cells = solution.to_vec();
-    cells.extend(back.into_iter().rev());
+    cells.extend(back);
     let wanted = (FIRST_LOOP_SHARE * (grid.width * grid.height) as f64) as usize;
     bump(
         grid,
@@ -203,6 +204,84 @@ fn shaped_loop(grid: Grid, solution: &[Cell], rng: &mut StdRng) -> Option<Vec<Ce
         rng,
     );
     (cells.len() > 2 * solution.len() - 2).then_some(cells)
+}
+
+fn long_route(grid: Grid, from: Cell, to: Cell, open: impl Fn(Cell) -> bool) -> Option<Vec<Cell>> {
+    let reached = route_lengths(grid, to, &open);
+    let far = grid
+        .cells()
+        .filter(|&cell| open(cell))
+        .max_by_key(|&cell| reached[grid.index(cell)].unwrap_or(0))?;
+    let there = route(grid, from, far, &open);
+    let back = there.as_ref().and_then(|there| {
+        route(grid, far, to, |cell| {
+            open(cell) && cell != far && !there.contains(&cell)
+        })
+    });
+    match (there, back) {
+        (Some(there), Some(back)) => Some(there.into_iter().chain([far]).chain(back).collect()),
+        _ => route(grid, from, to, open),
+    }
+}
+
+fn route_lengths(grid: Grid, from: Cell, open: impl Fn(Cell) -> bool) -> Vec<Option<usize>> {
+    let mut lengths = vec![None; grid.width * grid.height];
+    lengths[grid.index(from)] = Some(0);
+    let mut queue = VecDeque::from([(from, 0)]);
+    while let Some((here, length)) = queue.pop_front() {
+        for (_, next) in grid.neighbours(here) {
+            if open(next) && lengths[grid.index(next)].is_none() {
+                lengths[grid.index(next)] = Some(length + 1);
+                queue.push_back((next, length + 1));
+            }
+        }
+    }
+    lengths
+}
+
+fn route(grid: Grid, from: Cell, to: Cell, open: impl Fn(Cell) -> bool) -> Option<Vec<Cell>> {
+    let mut came_from: HashMap<Cell, Cell> = HashMap::new();
+    let mut queue = VecDeque::from([from]);
+    while let Some(here) = queue.pop_front() {
+        for (_, next) in grid.neighbours(here) {
+            if next == to && here != from {
+                let mut cells = vec![here];
+                while let Some(&before) = came_from.get(&cells[cells.len() - 1])
+                    && before != from
+                {
+                    cells.push(before);
+                }
+                cells.reverse();
+                return Some(cells);
+            }
+            if open(next) && next != from && !came_from.contains_key(&next) {
+                came_from.insert(next, here);
+                queue.push_back(next);
+            }
+        }
+    }
+    None
+}
+
+fn outside(grid: Grid, taken: &HashSet<Cell>) -> Vec<bool> {
+    let mut outer = vec![false; grid.width * grid.height];
+    let mut edge: Vec<Cell> = grid
+        .cells()
+        .filter(|cell| {
+            cell.x == 0 || cell.y == 0 || cell.x + 1 == grid.width || cell.y + 1 == grid.height
+        })
+        .filter(|cell| !taken.contains(cell))
+        .collect();
+    while let Some(cell) = edge.pop() {
+        if !std::mem::replace(&mut outer[grid.index(cell)], true) {
+            edge.extend(
+                grid.neighbours(cell)
+                    .map(|(_, next)| next)
+                    .filter(|next| !taken.contains(next)),
+            );
+        }
+    }
+    outer
 }
 
 fn inside(grid: Grid, cell: Cell) -> bool {
