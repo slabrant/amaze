@@ -1,12 +1,12 @@
 use crate::drawing::{Colour, Mark};
 use std::fmt::Write;
 
-pub const A4: (f64, f64) = (595.28, 841.89);
+pub const LETTER: (f64, f64) = (612.0, 792.0);
 
 const CURVE: f64 = 0.552_284_75;
 
 pub fn pdf(pages: &[Vec<Mark>]) -> Vec<u8> {
-    let (width, height) = A4;
+    let (width, height) = LETTER;
     let mut objects = vec![
         "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
         format!(

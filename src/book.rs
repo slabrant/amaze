@@ -4,7 +4,7 @@ use crate::drawing::{Mark, Point, draw, draw_solution};
 use crate::generate::generate;
 use crate::grid::Grid;
 use crate::maze::Maze;
-use crate::pdf::A4;
+use crate::pdf::LETTER;
 
 const MILLIMETRE: f64 = 72.0 / 25.4;
 const MARGIN: f64 = 15.0 * MILLIMETRE;
@@ -98,7 +98,7 @@ fn sheet(mazes: &[Maze], slots: &[Slot]) -> [Vec<Mark>; 2] {
         .iter()
         .zip(slots)
         .flat_map(|(maze, slot)| place(maze, &draw_solution(maze), slot))
-        .map(|mark| mark.moved(1.0, |(x, y)| (A4.0 - x, y)))
+        .map(|mark| mark.moved(1.0, |(x, y)| (LETTER.0 - x, y)))
         .collect();
     [front, back]
 }
@@ -116,8 +116,8 @@ fn whole_page() -> Slot {
     Slot {
         left: MARGIN,
         top: MARGIN,
-        width: A4.0 - 2.0 * MARGIN,
-        height: A4.1 - 2.0 * MARGIN,
+        width: LETTER.0 - 2.0 * MARGIN,
+        height: LETTER.1 - 2.0 * MARGIN,
     }
 }
 
@@ -194,11 +194,9 @@ mod tests {
                 .collect();
             assert!(!starts.is_empty());
             for (x, y) in starts {
-                assert!(
-                    route_points
-                        .iter()
-                        .any(|&(bx, by)| { (x + bx - A4.0).abs() < 1e-9 && (y - by).abs() < 1e-9 })
-                );
+                assert!(route_points.iter().any(|&(bx, by)| {
+                    (x + bx - LETTER.0).abs() < 1e-9 && (y - by).abs() < 1e-9
+                }));
             }
         }
     }
