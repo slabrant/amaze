@@ -50,7 +50,7 @@ filled. If a zone cannot be started, generation fails.
 ## Look
 
 - Paths are white with thin black edges, about three quarters of a cell wide. No walls.
-- The space between paths is lightly hatched, and a black line runs round the outside.
+- The space between paths is lightly hatched, and a black line with rounded corners runs round the outside.
 - Turns are rounded, inside and outside.
 - At a crossing, the top path is whole and the lower path's edges carry on across it as grey dashes.
 - A crossing where both paths run the same way: undecided (dashed edges, or a narrower top path).

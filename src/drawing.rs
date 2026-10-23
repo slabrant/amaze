@@ -11,6 +11,7 @@ const HATCH_WIDTH: f64 = 0.018;
 const ROUNDING: f64 = 0.25;
 const OVERLAP: f64 = 0.02;
 const INNER_ROUNDING: f64 = 0.1;
+const FRAME_ROUNDING: f64 = ROUNDING + 0.5 - HALF;
 const ARC_STEPS: usize = 6;
 const MARK: f64 = HALF;
 const ROUTE: f64 = 0.3;
@@ -143,6 +144,7 @@ impl Mark {
 
 pub fn draw(maze: &Maze) -> Vec<Mark> {
     let mut marks = vec![hatching(maze.grid)];
+    marks.extend(outside_frame(maze.grid));
     let mut edges: Vec<Vec<Point>> = vec![frame(maze.grid)];
     let mut under: Vec<Vec<Point>> = Vec::new();
     for cell in maze.grid.cells() {
@@ -327,15 +329,47 @@ fn across(cell: Cell, north_south: bool) -> Vec<Vec<Point>> {
         .collect()
 }
 
-fn frame(grid: Grid) -> Vec<Point> {
+fn frame_corners(grid: Grid) -> [(Point, Vec<Point>); 4] {
     let (width, height) = (grid.width as f64, grid.height as f64);
-    vec![
-        (0.0, 0.0),
-        (width, 0.0),
-        (width, height),
-        (0.0, height),
-        (0.0, 0.0),
+    let r = FRAME_ROUNDING;
+    let quarter = std::f64::consts::FRAC_PI_2;
+    let arc = |(cx, cy): Point, from: f64| -> Vec<Point> {
+        (0..=ARC_STEPS)
+            .map(|step| {
+                let angle = from + quarter * step as f64 / ARC_STEPS as f64;
+                (cx + r * angle.cos(), cy + r * angle.sin())
+            })
+            .collect()
+    };
+    [
+        ((0.0, 0.0), arc((r, r), 2.0 * quarter)),
+        ((width, 0.0), arc((width - r, r), 3.0 * quarter)),
+        ((width, height), arc((width - r, height - r), 0.0)),
+        ((0.0, height), arc((r, height - r), quarter)),
     ]
+}
+
+fn frame(grid: Grid) -> Vec<Point> {
+    let mut points: Vec<Point> = frame_corners(grid)
+        .into_iter()
+        .flat_map(|(_, arc)| arc)
+        .collect();
+    points.push(points[0]);
+    points
+}
+
+fn outside_frame(grid: Grid) -> Vec<Mark> {
+    frame_corners(grid)
+        .into_iter()
+        .map(|(corner, arc)| {
+            let mut points = vec![corner];
+            points.extend(arc);
+            Mark::Polygon {
+                points,
+                colour: Colour::WHITE,
+            }
+        })
+        .collect()
 }
 
 pub fn draw_solution(maze: &Maze) -> Vec<Mark> {
