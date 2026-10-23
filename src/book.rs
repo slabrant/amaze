@@ -6,6 +6,7 @@ use crate::grid::Grid;
 use crate::maze::Maze;
 use crate::pdf::LETTER;
 use crate::shapes::Shape;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 const MILLIMETRE: f64 = 72.0 / 25.4;
 const MARGIN: f64 = 15.0 * MILLIMETRE;
@@ -59,20 +60,21 @@ struct Slot {
 }
 
 pub fn book(seed: u64, contents: &Contents) -> Vec<Vec<Mark>> {
-    let mut seeds = seed..;
-    let mut pages = Vec::new();
-    for grid in [TRIVIAL, EASY, STANDARD, HARD] {
-        for _ in 0..contents.per_level {
-            let maze = maze(grid, seeds.next().unwrap_or(seed));
-            pages.extend(sheet(&[maze], &[whole_page()]));
-        }
-    }
-    let minis: Vec<Maze> = [MINI_TRIVIAL, MINI_EASY, MINI_STANDARD, MINI_HARD]
+    let full_size = [TRIVIAL, EASY, STANDARD, HARD]
         .into_iter()
-        .flat_map(|grid| std::iter::repeat_n(grid, contents.minis_per_level))
-        .map(|grid| maze(grid, seeds.next().unwrap_or(seed)))
-        .collect();
-    for page in minis.chunks(4) {
+        .flat_map(|grid| std::iter::repeat_n(grid, contents.per_level));
+    let mini = [MINI_TRIVIAL, MINI_EASY, MINI_STANDARD, MINI_HARD]
+        .into_iter()
+        .flat_map(|grid| std::iter::repeat_n(grid, contents.minis_per_level));
+    let full_size_count = 4 * contents.per_level;
+    let jobs: Vec<(Grid, u64)> = full_size.chain(mini).zip(seed..).collect();
+    let mazes = mazes(&jobs);
+    let (full_size, mini) = mazes.split_at(full_size_count);
+    let mut pages = Vec::new();
+    for maze in full_size {
+        pages.extend(sheet(std::slice::from_ref(maze), &[whole_page()]));
+    }
+    for page in mini.chunks(4) {
         pages.extend(sheet(page, &quarter_pages()));
     }
     pages
@@ -82,6 +84,34 @@ pub fn shaped_book(seed: u64, shape: Shape) -> Option<Vec<Vec<Mark>>> {
     let maze = (0..RETRIES)
         .find_map(|retry| generate_shaped(STANDARD, seed * RETRIES + retry, shape).ok())?;
     Some(sheet(&[maze], &[whole_page()]).to_vec())
+}
+
+fn mazes(jobs: &[(Grid, u64)]) -> Vec<Maze> {
+    let next = AtomicUsize::new(0);
+    let workers = std::thread::available_parallelism().map_or(1, |count| count.get());
+    let mut made: Vec<(usize, Maze)> = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..workers)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut made = Vec::new();
+                    loop {
+                        let index = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(&(grid, seed)) = jobs.get(index) else {
+                            break;
+                        };
+                        made.push((index, maze(grid, seed)));
+                    }
+                    made
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            .flat_map(|worker| worker.join().expect("maze worker finishes"))
+            .collect()
+    });
+    made.sort_by_key(|&(index, _)| index);
+    made.into_iter().map(|(_, maze)| maze).collect()
 }
 
 pub fn zones_for(grid: Grid) -> usize {

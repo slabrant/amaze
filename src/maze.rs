@@ -153,6 +153,10 @@ impl Maze {
     }
 
     pub fn routes_from(&self, sources: &[PieceId]) -> Routes {
+        self.routes_shorter_than(sources, usize::MAX)
+    }
+
+    pub fn routes_shorter_than(&self, sources: &[PieceId], length: usize) -> Routes {
         let mut routes = Routes {
             distances: vec![usize::MAX; self.pieces.len()],
             came_from: vec![None; self.pieces.len()],
@@ -162,6 +166,9 @@ impl Maze {
             routes.distances[source] = 0;
         }
         while let Some(id) = queue.pop_front() {
+            if routes.distances[id] + 1 >= length {
+                continue;
+            }
             for &(_, next) in &self.pieces[id].links {
                 if routes.distances[next] == usize::MAX {
                     routes.distances[next] = routes.distances[id] + 1;
