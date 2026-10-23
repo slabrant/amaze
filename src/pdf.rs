@@ -87,35 +87,24 @@ fn content(marks: &[Mark], height: f64) -> String {
                 colour,
             } => {
                 let (x, y) = up(*centre);
-                let r = *radius;
-                let k = r * CURVE;
-                writeln!(
-                    out,
-                    "{} rg {:.2} {y:.2} m {:.2} {:.2} {:.2} {:.2} {x:.2} {:.2} c {:.2} {:.2} {:.2} {:.2} {:.2} {y:.2} c {:.2} {:.2} {:.2} {:.2} {x:.2} {:.2} c {:.2} {:.2} {:.2} {:.2} {:.2} {y:.2} c f",
-                    rgb(*colour),
-                    x + r,
-                    x + r,
-                    y + k,
-                    x + k,
-                    y + r,
-                    y + r,
-                    x - k,
-                    y + r,
-                    x - r,
-                    y + k,
-                    x - r,
-                    x - r,
-                    y - k,
-                    x - k,
-                    y - r,
-                    y - r,
-                    x + k,
-                    y - r,
-                    x + r,
-                    y - k,
-                    x + r,
-                )
-                .unwrap();
+                write!(out, "{} rg {:.2} {y:.2} m ", rgb(*colour), x + radius).unwrap();
+                let around = [(1.0, 0.0), (0.0, 1.0), (-1.0, 0.0), (0.0, -1.0), (1.0, 0.0)];
+                for pair in around.windows(2) {
+                    let ((ax, ay), (bx, by)) = (pair[0], pair[1]);
+                    let pull = radius * CURVE;
+                    write!(
+                        out,
+                        "{:.2} {:.2} {:.2} {:.2} {:.2} {:.2} c ",
+                        x + radius * ax + pull * bx,
+                        y + radius * ay + pull * by,
+                        x + radius * bx + pull * ax,
+                        y + radius * by + pull * ay,
+                        x + radius * bx,
+                        y + radius * by,
+                    )
+                    .unwrap();
+                }
+                out.push_str("f\n");
             }
             Mark::Polygon { points, colour } => {
                 write!(out, "{} rg ", rgb(*colour)).unwrap();
@@ -125,23 +114,6 @@ fn content(marks: &[Mark], height: f64) -> String {
                     write!(out, "{x:.2} {y:.2} {verb} ").unwrap();
                 }
                 out.push_str("h f\n");
-            }
-            Mark::Square {
-                centre,
-                half,
-                colour,
-            } => {
-                let (x, y) = up(*centre);
-                writeln!(
-                    out,
-                    "{} rg {:.2} {:.2} {:.2} {:.2} re f",
-                    rgb(*colour),
-                    x - half,
-                    y - half,
-                    2.0 * half,
-                    2.0 * half
-                )
-                .unwrap();
             }
         }
     }
@@ -158,9 +130,9 @@ mod tests {
 
     #[test]
     fn cross_reference_points_at_each_object() {
-        let page = vec![Mark::Square {
+        let page = vec![Mark::Disc {
             centre: (100.0, 100.0),
-            half: 5.0,
+            radius: 5.0,
             colour: Colour::BLACK,
         }];
         let file = String::from_utf8(pdf(&[page.clone(), page])).unwrap();

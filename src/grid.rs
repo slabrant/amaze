@@ -81,6 +81,12 @@ impl Grid {
             .filter_map(move |dir| self.neighbour(cell, dir).map(|next| (dir, next)))
     }
 
+    pub fn around(&self, cell: Cell, reach: usize) -> impl Iterator<Item = Cell> + '_ {
+        let columns = cell.x.saturating_sub(reach)..=(cell.x + reach).min(self.width - 1);
+        (cell.y.saturating_sub(reach)..=(cell.y + reach).min(self.height - 1))
+            .flat_map(move |y| columns.clone().map(move |x| Cell { x, y }))
+    }
+
     pub fn cells(&self) -> impl Iterator<Item = Cell> + '_ {
         (0..self.height).flat_map(move |y| (0..self.width).map(move |x| Cell { x, y }))
     }

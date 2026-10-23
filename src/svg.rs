@@ -105,20 +105,6 @@ fn svg(maze: &Maze, marks: &[Mark]) -> String {
                 )
                 .unwrap();
             }
-            Mark::Square {
-                centre: (x, y),
-                half,
-                colour,
-            } => write!(
-                svg,
-                r#"<rect x="{}" y="{}" width="{}" height="{}" fill="{}"/>"#,
-                x - half,
-                y - half,
-                2.0 * half,
-                2.0 * half,
-                hex(colour)
-            )
-            .unwrap(),
         }
     }
     svg.push_str("</svg>");

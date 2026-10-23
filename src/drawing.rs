@@ -90,11 +90,6 @@ pub enum Mark {
         points: Vec<Point>,
         colour: Colour,
     },
-    Square {
-        centre: Point,
-        half: f64,
-        colour: Colour,
-    },
 }
 
 impl Mark {
@@ -127,15 +122,6 @@ impl Mark {
             },
             Mark::Polygon { points, colour } => Mark::Polygon {
                 points: points.iter().map(|&point| place(point)).collect(),
-                colour: *colour,
-            },
-            Mark::Square {
-                centre,
-                half,
-                colour,
-            } => Mark::Square {
-                centre: place(*centre),
-                half: half * scale,
                 colour: *colour,
             },
         }

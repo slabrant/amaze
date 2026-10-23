@@ -106,12 +106,9 @@ pub fn measure(maze: &Maze) -> Measures {
 pub fn cells_near(grid: Grid, route: impl IntoIterator<Item = Cell>) -> Vec<bool> {
     let mut near = vec![false; grid.width * grid.height];
     for on in route {
-        for y in on.y.saturating_sub(NEAR)..=(on.y + NEAR).min(grid.height - 1) {
-            for x in on.x.saturating_sub(NEAR)..=(on.x + NEAR).min(grid.width - 1) {
-                let cell = Cell { x, y };
-                if cell.squared_distance(on) <= NEAR * NEAR {
-                    near[grid.index(cell)] = true;
-                }
+        for cell in grid.around(on, NEAR) {
+            if cell.squared_distance(on) <= NEAR * NEAR {
+                near[grid.index(cell)] = true;
             }
         }
     }
@@ -122,11 +119,8 @@ pub fn zone_counts(maze: &Maze) -> Vec<Vec<usize>> {
     let grid = maze.grid;
     let mut counts = vec![vec![0; maze.zones()]; grid.width * grid.height];
     for piece in maze.pieces() {
-        let at = piece.cell;
-        for y in at.y.saturating_sub(MIXING_REACH)..=(at.y + MIXING_REACH).min(grid.height - 1) {
-            for x in at.x.saturating_sub(MIXING_REACH)..=(at.x + MIXING_REACH).min(grid.width - 1) {
-                counts[grid.index(Cell { x, y })][piece.zone] += 1;
-            }
+        for cell in grid.around(piece.cell, MIXING_REACH) {
+            counts[grid.index(cell)][piece.zone] += 1;
         }
     }
     counts
