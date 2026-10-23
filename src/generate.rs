@@ -1,8 +1,9 @@
 use crate::goals::{LONG_ROUTE, cells_near, zone_counts};
 use crate::grid::{Cell, Dir, Grid};
 use crate::maze::{Content, Maze, PieceId, Routes, Step, StepCell};
+use crate::shapes::Shape;
 use rand::prelude::*;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 const ATTEMPTS: usize = 1000;
 const ZONE_START_ATTEMPTS: usize = 20_000;
@@ -50,7 +51,25 @@ pub fn generate(grid: Grid, seed: u64, zones: usize) -> Result<Maze, Failed> {
         maze.make_step(&step).map_err(|_| Failed)?;
     }
     place_finish(&mut maze, zones)?;
-    while let Some(step) = best_step(&maze, &mut rng) {
+    while let Some(step) = best_step(&maze, &mut rng, false) {
+        maze.make_step(&step).map_err(|_| Failed)?;
+    }
+    Ok(maze)
+}
+
+pub fn generate_shaped(grid: Grid, seed: u64, shape: Shape) -> Result<Maze, Failed> {
+    if grid.width < 4 || grid.height < 4 {
+        return Err(Failed);
+    }
+    let mut rng = StdRng::seed_from_u64(seed);
+    let solution = shape.cells(grid);
+    let cells = shaped_loop(grid, &solution, &mut rng).ok_or(Failed)?;
+    let mut maze = Maze::with_loop(grid, &cells).map_err(|_| Failed)?;
+    maze.finish = solution[solution.len() - 1];
+    if maze.solution().len() != solution.len() {
+        return Err(Failed);
+    }
+    while let Some(step) = best_step(&maze, &mut rng, true) {
         maze.make_step(&step).map_err(|_| Failed)?;
     }
     Ok(maze)
@@ -154,6 +173,15 @@ impl Solution {
         }
     }
 
+    fn kept_by(&self, step: &Step) -> bool {
+        let through = |into: PieceId, out_of: PieceId| {
+            self.from_start.distances[into]
+                .saturating_add(step.cells.len() + 2)
+                .saturating_add(self.from_finish.distances[out_of])
+        };
+        through(step.from, step.to).min(through(step.to, step.from)) > self.length
+    }
+
     fn near_fraction_after(&self, maze: &Maze, step: &Step) -> f64 {
         let through = |into: PieceId, out_of: PieceId| {
             self.from_start.distances[into]
@@ -195,8 +223,16 @@ fn near_fraction(near: Vec<bool>) -> f64 {
     near.iter().filter(|&&is_near| is_near).count() as f64 / near.len() as f64
 }
 
-fn best_step(maze: &Maze, rng: &mut StdRng) -> Option<Step> {
+fn best_step(maze: &Maze, rng: &mut StdRng, keep_solution: bool) -> Option<Step> {
     let solution = Solution::of(maze);
+    let on_solution: HashSet<Cell> = if keep_solution {
+        maze.solution()
+            .iter()
+            .map(|&id| maze.piece(id).cell)
+            .collect()
+    } else {
+        HashSet::new()
+    };
     let counts = zone_counts(maze);
     let zones = maze.zones();
     let mut sizes = vec![0; zones];
@@ -209,6 +245,8 @@ fn best_step(maze: &Maze, rng: &mut StdRng) -> Option<Step> {
         .collect();
     steps
         .into_iter()
+        .filter(|step| !keep_solution || solution.kept_by(step))
+        .map(|step| under(step, &on_solution))
         .map(|step| {
             let share = sizes[step.zone] as f64 / maze.pieces().len() as f64;
             let score =
@@ -217,6 +255,13 @@ fn best_step(maze: &Maze, rng: &mut StdRng) -> Option<Step> {
         })
         .max_by(|a, b| a.0.total_cmp(&b.0))
         .map(|(_, step)| step)
+}
+
+fn under(mut step: Step, cells: &HashSet<Cell>) -> Step {
+    for c in &mut step.cells {
+        c.on_top &= !cells.contains(&c.cell);
+    }
+    step
 }
 
 fn step_score(maze: &Maze, solution: &Solution, counts: &[Vec<usize>], step: &Step) -> f64 {
@@ -301,16 +346,61 @@ fn first_loop(grid: Grid, rng: &mut StdRng) -> Vec<Cell> {
         .chain((left + 1..=right).rev().map(|x| Cell { x, y: bottom }))
         .chain((top + 1..=bottom).rev().map(|y| Cell { x: left, y }))
         .collect();
-    let mut taken: HashSet<Cell> = cells.iter().copied().collect();
-    let inside = |cell: Cell| {
-        (1..grid.width - 1).contains(&cell.x) && (1..grid.height - 1).contains(&cell.y)
-    };
     let wanted = (FIRST_LOOP_SHARE * (grid.width * grid.height) as f64) as usize;
+    bump(grid, &mut cells, 0, wanted, rng);
+    cells
+}
+
+fn shaped_loop(grid: Grid, solution: &[Cell], rng: &mut StdRng) -> Option<Vec<Cell>> {
+    let (&start, &finish) = (solution.first()?, solution.last()?);
+    let taken: HashSet<Cell> = solution.iter().copied().collect();
+    let mut came_from: HashMap<Cell, Cell> = HashMap::new();
+    let mut queue = VecDeque::from([finish]);
+    while let Some(here) = queue.pop_front() {
+        if here == start {
+            break;
+        }
+        for (_, next) in grid.neighbours(here) {
+            let open = next == start || (inside(grid, next) && !taken.contains(&next));
+            if open && !came_from.contains_key(&next) && next != finish {
+                came_from.insert(next, here);
+                queue.push_back(next);
+            }
+        }
+    }
+    let mut back = Vec::new();
+    let mut at = *came_from.get(&start)?;
+    while at != finish {
+        back.push(at);
+        at = came_from[&at];
+    }
+    let mut cells = solution.to_vec();
+    cells.extend(back.into_iter().rev());
+    let wanted = (FIRST_LOOP_SHARE * (grid.width * grid.height) as f64) as usize;
+    bump(
+        grid,
+        &mut cells,
+        solution.len(),
+        wanted.max(2 * solution.len()),
+        rng,
+    );
+    (cells.len() > 2 * solution.len() - 2).then_some(cells)
+}
+
+fn inside(grid: Grid, cell: Cell) -> bool {
+    (1..grid.width - 1).contains(&cell.x) && (1..grid.height - 1).contains(&cell.y)
+}
+
+fn bump(grid: Grid, cells: &mut Vec<Cell>, kept: usize, wanted: usize, rng: &mut StdRng) {
+    let mut taken: HashSet<Cell> = cells.iter().copied().collect();
     for _ in 0..BUMP_ATTEMPTS {
         if cells.len() >= wanted {
             break;
         }
         let i = rng.random_range(0..cells.len());
+        if i + 1 < kept {
+            continue;
+        }
         let (a, b) = (cells[i], cells[(i + 1) % cells.len()]);
         let Some(along) = Dir::between(a, b) else {
             continue;
@@ -320,8 +410,8 @@ fn first_loop(grid: Grid, rng: &mut StdRng) -> Vec<Cell> {
             .unwrap_or(&along);
         let bump = (grid.neighbour(a, side), grid.neighbour(b, side));
         if let (Some(a_out), Some(b_out)) = bump
-            && inside(a_out)
-            && inside(b_out)
+            && inside(grid, a_out)
+            && inside(grid, b_out)
             && !taken.contains(&a_out)
             && !taken.contains(&b_out)
         {
@@ -329,7 +419,6 @@ fn first_loop(grid: Grid, rng: &mut StdRng) -> Vec<Cell> {
             taken.extend([a_out, b_out]);
         }
     }
-    cells
 }
 
 fn open_sides(maze: &Maze, zone: usize) -> Vec<(PieceId, Dir)> {
@@ -544,6 +633,42 @@ mod tests {
             average(&|m| m.solver_steps[3]),
             started.elapsed() / seeds as u32,
         );
+    }
+
+    #[test]
+    fn shaped_mazes_keep_the_rules_and_their_shape() {
+        let grid = Grid {
+            width: 20,
+            height: 26,
+        };
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/svg");
+        std::fs::create_dir_all(&dir).unwrap();
+        for shape in crate::shapes::SHAPES {
+            let (seed, maze) = (0..20)
+                .find_map(|seed| {
+                    generate_shaped(grid, seed, shape)
+                        .ok()
+                        .map(|maze| (seed, maze))
+                })
+                .unwrap_or_else(|| panic!("{}", shape.name));
+            assert_eq!(broken(&maze), vec![], "{}", shape.name);
+            let solution: Vec<Cell> = maze
+                .solution()
+                .iter()
+                .map(|&id| maze.piece(id).cell)
+                .collect();
+            assert_eq!(solution, shape.cells(grid), "{}", shape.name);
+            let empty = grid
+                .cells()
+                .filter(|&cell| maze.content(cell) == Content::Empty)
+                .count();
+            println!("{} seed {seed} empty {empty}", shape.name);
+            std::fs::write(
+                dir.join(format!("shape-{}-solution.svg", shape.name)),
+                render_solution(&maze),
+            )
+            .unwrap();
+        }
     }
 
     #[test]

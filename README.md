@@ -17,6 +17,7 @@ Printable mazes where paths go over and under each other.
 - Solution: the route from start to finish.
 - Zone: a part of the maze spread among the other zones, not kept in one area. Zones are in order, first to last. Two zones join at a junction of one that is joined to cells of the other.
 - Circuit: a step's path together with the shortest route between its two ends, before the step.
+- Shape: a letter or figure drawn as one unbroken line through cells. A shaped maze's solution is its shape.
 - Step: adding a path whose two ends are joined to the maze. The cells its ends join become junctions, splitting the paths they were on. Its cells are empty cells or cells with one path in them; those become crossings.
 
 ## Building
@@ -26,6 +27,10 @@ allow, favouring the goals. Each step is in one zone. A new zone starts with a
 step whose two ends join the same cell of the last zone. Steps are never undone
 or changed. Steps are made until no step is allowed, when the area is nearly
 filled. If a zone cannot be started, generation fails.
+
+A shaped maze starts with a loop made of its shape and a route back from the
+finish to the start, longer than the shape. Its steps are only those that leave
+the solution as it is.
 
 ## Rules
 
@@ -62,6 +67,7 @@ filled. If a zone cannot be started, generation fails.
 
 - A book: Trivial, Easy, Standard and Hard one to a page, then mini Trivial, Easy, Standard and Hard four to a page.
 - Each solution is printed mirrored on the back of its page.
+- Given a shape (`amaze <maze.pdf> <seed> <shape>`), one Standard shaped maze instead. Shapes: C G J L M N S U V W Z 2 7 spiral.
 - The back shows only the solution: a thick line whose colour runs from red at the start to purple at the finish, with a gap where it goes under another path. Being mirrored, it lines up when the page is held to the light.
 
 ## Exceptions
@@ -74,3 +80,4 @@ Places where generation treats something differently from the rest.
 - Start and finish cells are never made into crossings.
 - The book retries a maze that fails with another seed, and every maze has at least two zones.
 - Grids smaller than 4 by 4 are refused.
+- A shaped maze has one zone, its start and finish are the ends of its shape, and the solution is always the top path at a crossing.

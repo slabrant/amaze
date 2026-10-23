@@ -1,10 +1,11 @@
 #[cfg(test)]
 use crate::drawing::Colour;
 use crate::drawing::{Mark, Point, draw, draw_solution};
-use crate::generate::generate;
+use crate::generate::{generate, generate_shaped};
 use crate::grid::Grid;
 use crate::maze::Maze;
 use crate::pdf::LETTER;
+use crate::shapes::Shape;
 
 const MILLIMETRE: f64 = 72.0 / 25.4;
 const MARGIN: f64 = 15.0 * MILLIMETRE;
@@ -75,6 +76,12 @@ pub fn book(seed: u64, contents: &Contents) -> Vec<Vec<Mark>> {
         pages.extend(sheet(page, &quarter_pages()));
     }
     pages
+}
+
+pub fn shaped_book(seed: u64, shape: Shape) -> Option<Vec<Vec<Mark>>> {
+    let maze = (0..RETRIES)
+        .find_map(|retry| generate_shaped(STANDARD, seed * RETRIES + retry, shape).ok())?;
+    Some(sheet(&[maze], &[whole_page()]).to_vec())
 }
 
 pub fn zones_for(grid: Grid) -> usize {
