@@ -195,6 +195,8 @@ pub fn draw(maze: &Maze) -> Vec<Mark> {
             under.extend(across(cell, maze.piece(*lower).has_side(Dir::North)));
         }
     }
+    marks.extend(start_mark(maze, maze.start));
+    marks.extend(finish_mark(maze, maze.finish));
     marks.push(lines(edges, EDGE, Colour::BLACK));
     marks.push(Mark::Lines {
         lines: under,
@@ -203,8 +205,6 @@ pub fn draw(maze: &Maze) -> Vec<Mark> {
         dash: Some(UNDER_DASH),
         round: false,
     });
-    marks.extend(start_mark(maze, maze.start));
-    marks.extend(finish_mark(maze, maze.finish));
     marks
 }
 
