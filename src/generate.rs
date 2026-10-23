@@ -259,8 +259,8 @@ fn mixing(maze: &Maze, counts: &[Vec<usize>], step: &Step) -> f64 {
 }
 
 fn short_route_shortfall(maze: &Maze, step: &Step) -> f64 {
-    let from_start = maze.routes_from(&[step.from]).distances;
-    let from_end = maze.routes_from(&[step.to]).distances;
+    let from_start = maze.routes_shorter_than(&[step.from], LONG_ROUTE).distances;
+    let from_end = maze.routes_shorter_than(&[step.to], LONG_ROUTE).distances;
     let length = step.cells.len();
     let mut shortfall = 0;
     for (i, c) in step.cells.iter().enumerate() {
@@ -364,11 +364,11 @@ fn can_enter(maze: &Maze, cell: Cell) -> bool {
     }
 }
 
-fn ways_on(maze: &Maze, here: Cell, heading: Dir) -> Vec<Dir> {
+fn ways_on<'a>(maze: &Maze, here: Cell, heading: &'a Dir) -> &'a [Dir] {
     if maze.content(here) == Content::Path {
-        vec![heading]
+        std::slice::from_ref(heading)
     } else {
-        Dir::ALL.to_vec()
+        &Dir::ALL
     }
 }
 
@@ -405,8 +405,8 @@ fn find_step(
     let mut ends: Vec<(usize, PieceId)> = Vec::new();
     loop {
         let here = cells[cells.len() - 1].cell;
-        let ways = ways_on(maze, here, heading);
-        for &dir in &ways {
+        let ways = ways_on(maze, here, &heading);
+        for &dir in ways {
             if let Some(next) = grid.neighbour(here, dir)
                 && let [to] = *maze.pieces_in(next)
                 && (to == from || maze.piece(to).zone == zone)
@@ -417,12 +417,18 @@ fn find_step(
         if cells.len() >= limit {
             break;
         }
-        let onward: Vec<(Dir, Cell)> = ways
-            .into_iter()
-            .filter_map(|dir| grid.neighbour(here, dir).map(|cell| (dir, cell)))
-            .filter(|&(_, cell)| !visited[grid.index(cell)] && can_enter(maze, cell))
-            .collect();
-        let Ok(&(dir, next)) = onward.choose_weighted(rng, |&(_, cell)| {
+        let mut onward = [(heading, here); 4];
+        let mut found = 0;
+        for &dir in ways {
+            if let Some(cell) = grid.neighbour(here, dir)
+                && !visited[grid.index(cell)]
+                && can_enter(maze, cell)
+            {
+                onward[found] = (dir, cell);
+                found += 1;
+            }
+        }
+        let Ok(&(dir, next)) = onward[..found].choose_weighted(rng, |&(_, cell)| {
             ALWAYS_SOME + foreign_share(counts, grid.index(cell), zone)
         }) else {
             break;
