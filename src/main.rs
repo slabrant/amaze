@@ -2,7 +2,7 @@ use amaze::book::{Contents, book};
 use amaze::pdf::pdf;
 use std::process::ExitCode;
 
-const PER_LEVEL: usize = 5;
+const PER_LEVEL: usize = 2;
 const MINIS_PER_LEVEL: usize = 4;
 
 fn main() -> ExitCode {
