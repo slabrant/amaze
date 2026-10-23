@@ -3,7 +3,7 @@ use amaze::pdf::pdf;
 use std::process::ExitCode;
 
 const PER_LEVEL: usize = 2;
-const MINIS_PER_LEVEL: usize = 4;
+const MINIS_PER_LEVEL: usize = 3;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
