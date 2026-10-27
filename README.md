@@ -53,7 +53,7 @@ filled. If a zone cannot be started, generation fails.
 - The space between paths is plain white, and a black line with rounded corners runs round the outside.
 - Light comes from the top left. Every path casts a soft shadow onto the background. The top path of a crossing rises and falls: its slope facing away from the light darkens steadily towards the bottom, lighter on the side nearer the light, and it casts a soft shadow on the lower path.
 - Turns are rounded, inside and outside.
-- At a crossing, the top path is whole and the lower path's edges carry on across it as grey dashes.
+- At a crossing, the top path is whole and hides the lower path.
 - A crossing where both paths run the same way: undecided (dashed edges, or a narrower top path).
 - Start: a red square with a white dot. It has no direction; the solver can set off either way.
 - Finish: a purple square with a white ring and dot.

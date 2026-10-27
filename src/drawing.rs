@@ -4,8 +4,6 @@ use crate::maze::{Maze, PieceId};
 const CORRIDOR: f64 = 0.75;
 const HALF: f64 = CORRIDOR / 2.0;
 const EDGE: f64 = 0.06;
-const UNDER_EDGE: f64 = 0.042;
-const UNDER_DASH: [f64; 2] = [0.08, 0.07];
 const LIGHT: Point = (
     std::f64::consts::FRAC_1_SQRT_2,
     std::f64::consts::FRAC_1_SQRT_2,
@@ -43,7 +41,6 @@ pub struct Colour {
 impl Colour {
     pub const BLACK: Colour = Colour::grey(0.0);
     pub const WHITE: Colour = Colour::grey(1.0);
-    pub const UNDER: Colour = Colour::grey(0.55);
     pub const START: Colour = Colour {
         red: 0.86,
         green: 0.12,
@@ -143,7 +140,6 @@ impl Mark {
 pub fn draw(maze: &Maze) -> Vec<Mark> {
     let mut fills: Vec<Vec<Point>> = Vec::new();
     let mut edges: Vec<Vec<Point>> = vec![frame(maze.grid)];
-    let mut under: Vec<Vec<Point>> = Vec::new();
     let mut shading: Vec<Mark> = Vec::new();
     for cell in maze.grid.cells() {
         let ids = maze.pieces_in(cell);
@@ -179,7 +175,7 @@ pub fn draw(maze: &Maze) -> Vec<Mark> {
             }
         }
         edges.extend(wall_faces(&ring));
-        if let [lower, top] = ids {
+        if let [_, top] = ids {
             let along = if maze.piece(*top).has_side(Dir::North) {
                 Dir::South
             } else {
@@ -194,7 +190,6 @@ pub fn draw(maze: &Maze) -> Vec<Mark> {
             };
             shading.extend(bridge(cell, along, [!flat(along), !flat(along.opposite())]));
             edges.extend(across(cell, maze.piece(*top).has_side(Dir::North)));
-            under.extend(across(cell, maze.piece(*lower).has_side(Dir::North)));
         }
     }
     let mut marks = background_shadow(&fills);
@@ -207,13 +202,6 @@ pub fn draw(maze: &Maze) -> Vec<Mark> {
     marks.extend(start_mark(maze, maze.start));
     marks.extend(finish_mark(maze, maze.finish));
     marks.push(lines(edges, EDGE, Colour::BLACK));
-    marks.push(Mark::Lines {
-        lines: under,
-        width: UNDER_EDGE,
-        colour: Colour::UNDER,
-        dash: Some(UNDER_DASH),
-        round: false,
-    });
     marks
 }
 
