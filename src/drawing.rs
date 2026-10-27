@@ -6,15 +6,15 @@ const HALF: f64 = CORRIDOR / 2.0;
 const EDGE: f64 = 0.06;
 const UNDER_EDGE: f64 = 0.042;
 const UNDER_DASH: [f64; 2] = [0.08, 0.07];
-const HATCH_SPACING: f64 = 0.16;
-const HATCH_WIDTH: f64 = 0.018;
-const HATCH_DEGREES: f64 = 75.0;
 const LIGHT: Point = (0.6, 0.8);
 const DECK_BANDS: usize = 12;
 const DECK_SHADE: f64 = 0.3;
 const SHADOW_DEPTH: f64 = 0.3;
 const SHADOW_BANDS: usize = 6;
 const SHADOW: f64 = 0.62;
+const BACKGROUND_SHADOW_DEPTH: f64 = 0.2;
+const BACKGROUND_SHADOW_LAYERS: usize = 5;
+const BACKGROUND_SHADOW: f64 = 0.6;
 const ROUNDING: f64 = 0.25;
 const OVERLAP: f64 = 0.02;
 const INNER_ROUNDING: f64 = 0.1;
@@ -37,7 +37,6 @@ pub struct Colour {
 impl Colour {
     pub const BLACK: Colour = Colour::grey(0.0);
     pub const WHITE: Colour = Colour::grey(1.0);
-    pub const HATCH: Colour = Colour::grey(0.75);
     pub const UNDER: Colour = Colour::grey(0.55);
     pub const START: Colour = Colour {
         red: 0.86,
@@ -136,8 +135,7 @@ impl Mark {
 }
 
 pub fn draw(maze: &Maze) -> Vec<Mark> {
-    let mut marks = vec![hatching(maze.grid)];
-    marks.extend(outside_frame(maze.grid));
+    let mut fills: Vec<Vec<Point>> = Vec::new();
     let mut edges: Vec<Vec<Point>> = vec![frame(maze.grid)];
     let mut under: Vec<Vec<Point>> = Vec::new();
     let mut shading: Vec<Mark> = Vec::new();
@@ -148,20 +146,14 @@ pub fn draw(maze: &Maze) -> Vec<Mark> {
         }
         let joined = Dir::ALL.map(|dir| ids.iter().any(|&id| maze.piece(id).has_side(dir)));
         let ring = ring(cell, joined);
-        marks.push(Mark::Polygon {
-            points: ring.iter().map(|&(point, _)| point).collect(),
-            colour: Colour::WHITE,
-        });
+        fills.push(ring.iter().map(|&(point, _)| point).collect());
         let inner = |a: Dir, b: Dir| {
             ids.iter()
                 .any(|&id| maze.piece(id).has_side(a) && maze.piece(id).has_side(b))
         };
         for (i, dir) in Dir::ALL.into_iter().enumerate() {
             if joined[i] {
-                marks.push(Mark::Polygon {
-                    points: overlapping(arm(cell, dir), dir),
-                    colour: Colour::WHITE,
-                });
+                fills.push(overlapping(arm(cell, dir), dir));
                 edges.extend(arm_edges(
                     cell,
                     dir,
@@ -176,10 +168,7 @@ pub fn draw(maze: &Maze) -> Vec<Mark> {
                 let arc = fillet(cell, a, b);
                 let mut fill = vec![corner(cell, a, b)];
                 fill.extend(arc.iter().copied());
-                marks.push(Mark::Polygon {
-                    points: fill,
-                    colour: Colour::WHITE,
-                });
+                fills.push(fill);
                 edges.push(arc);
             }
         }
@@ -202,6 +191,12 @@ pub fn draw(maze: &Maze) -> Vec<Mark> {
             under.extend(across(cell, maze.piece(*lower).has_side(Dir::North)));
         }
     }
+    let mut marks = background_shadow(&fills);
+    marks.extend(outside_frame(maze.grid));
+    marks.extend(fills.into_iter().map(|points| Mark::Polygon {
+        points,
+        colour: Colour::WHITE,
+    }));
     marks.extend(shading);
     marks.extend(start_mark(maze, maze.start));
     marks.extend(finish_mark(maze, maze.finish));
@@ -486,42 +481,22 @@ fn half_route(maze: &Maze, id: PieceId, edge: Point) -> Vec<Point> {
     ]
 }
 
-fn hatching(grid: Grid) -> Mark {
-    let (width, height) = (grid.width as f64, grid.height as f64);
-    let angle = HATCH_DEGREES.to_radians();
-    let along = (angle.cos(), -angle.sin());
-    let normal = (angle.sin(), angle.cos());
-    let reach = |(x, y): Point| x * normal.0 + y * normal.1;
-    let corners = [(0.0, 0.0), (width, 0.0), (0.0, height), (width, height)];
-    let lowest = corners.iter().map(|&p| reach(p)).fold(f64::MAX, f64::min);
-    let highest = corners.iter().map(|&p| reach(p)).fold(f64::MIN, f64::max);
-    let count = ((highest - lowest) / HATCH_SPACING).ceil() as usize;
-    let lines = (1..count)
-        .filter_map(|i| {
-            let offset = lowest + i as f64 * HATCH_SPACING;
-            let base = (normal.0 * offset, normal.1 * offset);
-            let mut span = (f64::MIN, f64::MAX);
-            for (start, step, limit) in [(base.0, along.0, width), (base.1, along.1, height)] {
-                if step.abs() < 1e-12 {
-                    if start < 0.0 || start > limit {
-                        return None;
-                    }
-                    continue;
-                }
-                let (a, b) = ((0.0 - start) / step, (limit - start) / step);
-                span = (span.0.max(a.min(b)), span.1.min(a.max(b)));
-            }
-            let at = |t: f64| (base.0 + along.0 * t, base.1 + along.1 * t);
-            (span.0 < span.1).then(|| vec![at(span.0), at(span.1)])
+fn background_shadow(fills: &[Vec<Point>]) -> Vec<Mark> {
+    (1..=BACKGROUND_SHADOW_LAYERS)
+        .rev()
+        .flat_map(|layer| {
+            let reach = BACKGROUND_SHADOW_DEPTH * layer as f64 / BACKGROUND_SHADOW_LAYERS as f64;
+            let fade = (layer - 1) as f64 / BACKGROUND_SHADOW_LAYERS as f64;
+            let colour = Colour::grey(BACKGROUND_SHADOW + (1.0 - BACKGROUND_SHADOW) * fade);
+            fills.iter().map(move |points| Mark::Polygon {
+                points: points
+                    .iter()
+                    .map(|&(x, y)| (x + LIGHT.0 * reach, y + LIGHT.1 * reach))
+                    .collect(),
+                colour,
+            })
         })
-        .collect();
-    Mark::Lines {
-        lines,
-        width: HATCH_WIDTH,
-        colour: Colour::HATCH,
-        dash: None,
-        round: false,
-    }
+        .collect()
 }
 
 fn cell_shape(maze: &Maze, cell: Cell, colour: Colour) -> Mark {

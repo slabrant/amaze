@@ -120,21 +120,12 @@ fn step_report(maze: &Maze, choice: &Choice) -> String {
                     without(&choice.candidates[a].1).total_cmp(&without(&choice.candidates[b].1))
                 })
                 .unwrap_or(choice.chosen);
-            !same(&choice.candidates[winner].0, choice.step())
+            winner != choice.chosen
         })
         .collect();
-    let mut picked: Vec<usize> = vec![choice.chosen];
-    for i in order {
-        if picked.len() < SHOWN
-            && !picked
-                .iter()
-                .any(|&p| same(&choice.candidates[p].0, &choice.candidates[i].0))
-        {
-            picked.push(i);
-        }
-    }
-    let shown: Vec<String> = picked
-        .into_iter()
+    let shown: Vec<String> = std::iter::once(choice.chosen)
+        .chain(order.into_iter().filter(|&i| i != choice.chosen))
+        .take(SHOWN)
         .map(|i| candidate(maze, &choice.candidates[i].0, &choice.candidates[i].1))
         .collect();
     format!(
@@ -148,14 +139,6 @@ fn step_report(maze: &Maze, choice: &Choice) -> String {
         shown.join(","),
         measures(&measure(maze))
     )
-}
-
-fn same(a: &Step, b: &Step) -> bool {
-    let cells = |step: &Step| step.cells.iter().map(|c| c.cell).collect::<Vec<Cell>>();
-    let mut reversed = cells(b);
-    reversed.reverse();
-    (a.from == b.from && a.to == b.to && cells(a) == cells(b))
-        || (a.from == b.to && a.to == b.from && cells(a) == reversed)
 }
 
 fn candidate(maze: &Maze, step: &Step, terms: &[f64]) -> String {

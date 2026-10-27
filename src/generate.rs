@@ -118,9 +118,25 @@ fn candidates<'a>(
         CANDIDATES
     };
     let sides = open_sides(maze, zone);
+    let mut found = HashSet::new();
     (0..attempts)
         .filter_map(move |_| find_step(maze, rng, counts, zone, &sides))
+        .filter(move |step| found.insert(path_of(maze, step)))
         .take(wanted)
+}
+
+fn path_of(maze: &Maze, step: &Step) -> Vec<Cell> {
+    let cells: Vec<Cell> = std::iter::once(maze.piece(step.from).cell)
+        .chain(step.cells.iter().map(|c| c.cell))
+        .chain(std::iter::once(maze.piece(step.to).cell))
+        .collect();
+    let key = |cell: &Cell| (cell.x, cell.y);
+    let backwards: Vec<Cell> = cells.iter().rev().copied().collect();
+    if cells.iter().map(key).lt(backwards.iter().map(key)) {
+        cells
+    } else {
+        backwards
+    }
 }
 
 fn best_step(maze: &Maze, rng: &mut StdRng) -> Option<Choice> {
