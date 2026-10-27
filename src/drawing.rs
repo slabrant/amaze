@@ -10,8 +10,8 @@ const LIGHT: Point = (
     std::f64::consts::FRAC_1_SQRT_2,
     std::f64::consts::FRAC_1_SQRT_2,
 );
-const DECK_BANDS: usize = 12;
-const DECK_SHADE: f64 = 0.3;
+const DECK_BANDS: usize = 24;
+const DECK_LIT: f64 = 0.045;
 const SHADOW_DEPTH: f64 = 0.3;
 const SHADOW_BANDS: usize = 6;
 const SHADOW: f64 = 0.62;
@@ -40,6 +40,7 @@ pub struct Colour {
 impl Colour {
     pub const BLACK: Colour = Colour::grey(0.0);
     pub const WHITE: Colour = Colour::grey(1.0);
+    pub const PATH: Colour = Colour::grey(0.92);
     pub const UNDER: Colour = Colour::grey(0.55);
     pub const START: Colour = Colour {
         red: 0.86,
@@ -198,7 +199,7 @@ pub fn draw(maze: &Maze) -> Vec<Mark> {
     marks.extend(outside_frame(maze.grid));
     marks.extend(fills.into_iter().map(|points| Mark::Polygon {
         points,
-        colour: Colour::WHITE,
+        colour: Colour::PATH,
     }));
     marks.extend(shading);
     marks.extend(start_mark(maze, maze.start));
@@ -228,6 +229,10 @@ fn facing(dir: Dir) -> f64 {
     dx * LIGHT.0 + dy * LIGHT.1
 }
 
+fn deck_tone(rise: f64) -> f64 {
+    (Colour::PATH.red + DECK_LIT * rise).min(1.0)
+}
+
 fn bridge(cell: Cell, along: Dir, ramps: [bool; 2]) -> Vec<Mark> {
     let (x, y) = centre(cell);
     let across = along.turned_right();
@@ -238,24 +243,28 @@ fn bridge(cell: Cell, along: Dir, ramps: [bool; 2]) -> Vec<Mark> {
     let rectangle = |(a0, a1): (f64, f64), (b0, b1): (f64, f64)| {
         vec![place(a0, b0), place(a1, b0), place(a1, b1), place(a0, b1)]
     };
+    let toward = facing(along);
+    let height = |a: f64| {
+        let ramp = if a >= 0.0 { ramps[0] } else { ramps[1] };
+        if ramp {
+            (std::f64::consts::PI * a).cos().powi(2)
+        } else {
+            1.0
+        }
+    };
     let mut marks = Vec::new();
-    for ((dir, sign), ramp) in [(along, 1.0), (along.opposite(), -1.0)]
-        .into_iter()
-        .zip(ramps)
-    {
-        let away = facing(dir).max(0.0);
-        if away == 0.0 || !ramp {
+    for band in 0..DECK_BANDS {
+        let from = band as f64 / DECK_BANDS as f64 - 0.5;
+        let to = (band + 1) as f64 / DECK_BANDS as f64 - 0.5;
+        let rise = (height(to) - height(from)) * DECK_BANDS as f64 * toward;
+        let tone = deck_tone(rise);
+        if (tone - Colour::PATH.red).abs() < 1e-3 {
             continue;
         }
-        for band in 0..DECK_BANDS {
-            let from = 0.5 * band as f64 / DECK_BANDS as f64;
-            let to = 0.5 * (band + 1) as f64 / DECK_BANDS as f64;
-            let slope = (std::f64::consts::PI * (band as f64 + 0.5) / DECK_BANDS as f64).sin();
-            marks.push(Mark::Polygon {
-                points: rectangle((sign * (from - OVERLAP).max(0.0), sign * to), (-HALF, HALF)),
-                colour: Colour::grey(1.0 - DECK_SHADE * away * slope),
-            });
-        }
+        marks.push(Mark::Polygon {
+            points: rectangle((from - OVERLAP, to + OVERLAP), (-HALF, HALF)),
+            colour: Colour::grey(tone),
+        });
     }
     let (side, sign) = if facing(across) >= 0.0 {
         (across, 1.0)
