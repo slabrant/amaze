@@ -82,7 +82,8 @@ Places where generation treats something differently from the rest.
 `cargo run --release --bin steps -- report.html [seeds] [first seed] [width height]`
 
 Builds several mazes (8 by default) and writes a page showing every step of each,
-side by side, with why each step was chosen.
+side by side, with why each step was chosen. Before the steps, it shows the first
+loop growing one bump at a time.
 
 - Term: one weighted part of a step's score. A step's score is the sum of its terms.
 - Lift: how far the chosen step's term is above the average step it was picked from.

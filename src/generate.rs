@@ -55,29 +55,34 @@ impl Choice {
     }
 }
 
+pub enum Event<'a> {
+    Loop(&'a [Cell]),
+    Chosen(&'a Maze, &'a Choice),
+}
+
 pub fn total(terms: &[f64]) -> f64 {
     terms.iter().sum()
 }
 
 pub fn generate(grid: Grid, seed: u64, zones: usize) -> Result<Maze, Failed> {
-    generate_watched(grid, seed, zones, |_, _| {})
+    generate_watched(grid, seed, zones, |_| {})
 }
 
 pub fn generate_watched(
     grid: Grid,
     seed: u64,
     zones: usize,
-    mut watch: impl FnMut(&Maze, Option<&Choice>),
+    mut watch: impl FnMut(Event),
 ) -> Result<Maze, Failed> {
     if grid.width < 4 || grid.height < 4 || zones == 0 {
         return Err(Failed);
     }
     let mut rng = StdRng::seed_from_u64(seed);
-    let mut maze = Maze::with_loop(grid, &first_loop(grid, &mut rng)).map_err(|_| Failed)?;
+    let cells = first_loop(grid, &mut rng, &mut |cells| watch(Event::Loop(cells)));
+    let mut maze = Maze::with_loop(grid, &cells).map_err(|_| Failed)?;
     maze.start = *path_cells_in_zone(&maze, 0)
         .choose(&mut rng)
         .ok_or(Failed)?;
-    watch(&maze, None);
     let mut entry = maze.pieces_in(maze.start)[0];
     for zone in 1..zones {
         let counts = zone_counts(&maze);
@@ -93,14 +98,14 @@ pub fn generate_watched(
         if zone + 1 == zones {
             place_finish(&mut maze, zones)?;
         }
-        watch(&maze, Some(&choice));
+        watch(Event::Chosen(&maze, &choice));
     }
     if zones == 1 {
         place_finish(&mut maze, zones)?;
     }
     while let Some(choice) = best_step(&maze, &mut rng) {
         maze.make_step(choice.step()).map_err(|_| Failed)?;
-        watch(&maze, Some(&choice));
+        watch(Event::Chosen(&maze, &choice));
     }
     Ok(maze)
 }
@@ -192,7 +197,7 @@ fn path_cells_in_zone(maze: &Maze, zone: usize) -> Vec<Cell> {
         .collect()
 }
 
-fn first_loop(grid: Grid, rng: &mut StdRng) -> Vec<Cell> {
+fn first_loop(grid: Grid, rng: &mut StdRng, grew: &mut impl FnMut(&[Cell])) -> Vec<Cell> {
     let width = grid.width - 2;
     let height = grid.height - 2;
     let left = rng.random_range(1..=grid.width - 1 - width);
@@ -205,6 +210,7 @@ fn first_loop(grid: Grid, rng: &mut StdRng) -> Vec<Cell> {
         .chain((left + 1..=right).rev().map(|x| Cell { x, y: bottom }))
         .chain((top + 1..=bottom).rev().map(|y| Cell { x: left, y }))
         .collect();
+    grew(&cells);
     let mut taken: HashSet<Cell> = cells.iter().copied().collect();
     let inside = |cell: Cell| {
         (1..grid.width - 1).contains(&cell.x) && (1..grid.height - 1).contains(&cell.y)
@@ -231,6 +237,7 @@ fn first_loop(grid: Grid, rng: &mut StdRng) -> Vec<Cell> {
         {
             cells.splice(i + 1..i + 1, [a_out, b_out]);
             taken.extend([a_out, b_out]);
+            grew(&cells);
         }
     }
     cells

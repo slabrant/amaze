@@ -49,7 +49,7 @@ h2 { font-family: var(--display); font-size: 1.05rem; margin: 0 0 4px; text-wrap
 .meta { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); }
 .dial { display: flex; align-items: center; gap: 8px; flex: 1 1 320px; min-width: 0; }
 .dial input[type=range] { flex: 1; min-width: 0; accent-color: var(--chosen); }
-.dial output { font-family: var(--mono); font-variant-numeric: tabular-nums; min-width: 9ch; }
+.dial output { font-family: var(--mono); font-variant-numeric: tabular-nums; min-width: 11ch; }
 button { font: inherit; font-size: 0.85rem; background: var(--paper); color: var(--ink); border: 1px solid var(--rule); border-radius: 4px; padding: 4px 10px; cursor: pointer; }
 button:hover { border-color: var(--muted); }
 button:focus-visible, input:focus-visible, .seed:focus-visible { outline: 2px solid var(--chosen); outline-offset: 2px; }
@@ -94,6 +94,7 @@ tr.candidate:hover, tr.candidate.lit { background: var(--paper); }
     <input id="step" type="range" min="0" value="0" aria-label="Step">
     <button id="on" type="button" aria-label="Next step">&rarr;</button>
     <output id="shown-step" for="step"></output>
+    <button id="to-steps" type="button">Skip to steps</button>
   </div>
 </header>
 
@@ -108,7 +109,7 @@ tr.candidate:hover, tr.candidate.lit { background: var(--paper); }
 
   <section>
     <h2 id="at-title"></h2>
-    <p class="lede"><span class="key"><span><span class="swatch" style="background:var(--chosen)"></span>chosen step</span><span><span class="swatch" style="background:var(--runner)"></span>runner-up</span><span>thin lines: the maze so far, coloured by zone</span></span></p>
+    <p class="lede"><span class="key"><span><span class="swatch" style="background:var(--chosen)"></span>chosen step or newest bump</span><span><span class="swatch" style="background:var(--runner)"></span>runner-up</span><span>thin lines: the maze so far, coloured by zone</span></span></p>
     <div class="seeds" id="seeds"></div>
   </section>
 
@@ -146,6 +147,9 @@ const T95 = [0, 12.71, 4.30, 3.18, 2.78, 2.57, 2.45, 2.36, 2.31, 2.26, 2.23, 2.2
 const seeds = DATA.seeds.filter(s => !s.failed);
 const failed = DATA.failed;
 const longest = Math.max(...seeds.map(s => s.steps.length));
+seeds.forEach(s => { s.loop = s.growth[s.growth.length - 1]; });
+const growing = Math.max(...seeds.map(s => s.growth.length));
+const choiceAt = () => at - growing;
 const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const zoneColour = zone => css(`--zone-${zone % 6}`);
 let at = 0;
@@ -213,6 +217,20 @@ function drawMark(ctx, size, cell, colour) {
   ctx.fillRect(cell[0] * size + size * 0.15, cell[1] * size + size * 0.15, size * 0.7, size * 0.7);
 }
 
+function loopFrame(seed) {
+  return Math.min(at, seed.growth.length - 1);
+}
+
+function drawLoop(ctx, size, seed) {
+  const frame = loopFrame(seed);
+  const cells = seed.growth[frame];
+  drawRoute(ctx, size, cells, zoneColour(0), Math.max(1, size * 0.22), null, true);
+  if (frame === 0 || frame !== at) return;
+  const before = new Set(seed.growth[frame - 1].map(c => c.join(",")));
+  const index = cells.findIndex(c => !before.has(c.join(",")));
+  drawRoute(ctx, size, cells.slice(Math.max(index - 1, 0), index + 3), css("--chosen"), Math.max(2, size * 0.38));
+}
+
 function drawMaze(canvas, seed, upTo, highlight) {
   const ctx = canvas.getContext("2d");
   const size = cellSize(canvas);
@@ -222,6 +240,7 @@ function drawMaze(canvas, seed, upTo, highlight) {
   ctx.strokeStyle = css("--rule");
   ctx.lineWidth = 1;
   ctx.strokeRect(0.5, 0.5, DATA.width * size - 1, DATA.height * size - 1);
+  if (upTo < 0) { drawLoop(ctx, size, seed); return; }
   const base = Math.max(1, size * 0.22);
   drawRoute(ctx, size, seed.loop, zoneColour(0), base, null, true);
   seed.steps.slice(0, upTo).forEach(step => drawRoute(ctx, size, step.shown[0].cells, zoneColour(step.zone), base));
@@ -257,18 +276,32 @@ function renderSeeds() {
       holder.appendChild(card);
     });
   }
+  const k = choiceAt();
   [...holder.children].forEach((card, i) => {
     const seed = seeds[i];
-    const step = seed.steps[at];
     card.classList.toggle("picked", i === picked);
-    drawMaze(card.querySelector("canvas"), seed, Math.min(at, seed.steps.length), 1);
+    drawMaze(card.querySelector("canvas"), seed, Math.min(k, seed.steps.length), 1);
+    if (k < 0) {
+      const frame = loopFrame(seed);
+      const size = seed.growth[frame].length;
+      card.querySelector(".kind").textContent = "first loop";
+      card.querySelector(".why").textContent = frame === 0 ? `starting rectangle, ${size} cells` : frame === at ? `bump ${frame} adds 2 cells, now ${size}` : `loop done after ${frame} bumps, ${size} cells`;
+      return;
+    }
+    const step = seed.steps[k];
     card.querySelector(".kind").textContent = step ? `${step.kind}, zone ${step.zone + 1}` : "finished";
     card.querySelector(".why").innerHTML = step ? `${deciding(step)}; ${step.count} candidates` : `done after ${seed.steps.length} steps`;
   });
 }
 
 function renderAverages() {
-  const steps = seeds.map(s => s.steps[at]).filter(Boolean);
+  const k = choiceAt();
+  if (k < 0) {
+    document.getElementById("at-note").textContent = "The first loop grows by random bumps until it covers 35% of the grid. Nothing is scored, so there is nothing to compare yet.";
+    document.getElementById("at-table").innerHTML = "";
+    return;
+  }
+  const steps = seeds.map(s => s.steps[k]).filter(Boolean);
   const kinds = [...new Set(steps.map(s => s.kind))];
   const note = document.getElementById("at-note");
   note.textContent = `${steps.length} of ${seeds.length} seeds reach this step` + (kinds.length > 1 ? "; they are at different kinds of step, so only matching ones are averaged." : ".");
@@ -292,11 +325,12 @@ function renderAverages() {
 
 function renderDetail() {
   const seed = seeds[picked];
-  const step = seed.steps[at];
-  document.getElementById("detail-title").textContent = step ? `Seed ${seed.seed}, step ${at + 1}: ${step.kind} in zone ${step.zone + 1}` : `Seed ${seed.seed} is finished`;
+  const k = choiceAt();
+  const step = seed.steps[k];
+  document.getElementById("detail-title").textContent = k < 0 ? `Seed ${seed.seed}, first loop: bump ${loopFrame(seed)} of ${seed.growth.length - 1}` : step ? `Seed ${seed.seed}, step ${k + 1}: ${step.kind} in zone ${step.zone + 1}` : `Seed ${seed.seed} is finished`;
   const canvas = document.getElementById("detail");
   canvas.height = Math.round(canvas.width * DATA.height / DATA.width);
-  drawMaze(canvas, seed, Math.min(at, seed.steps.length), lit);
+  drawMaze(canvas, seed, Math.min(k, seed.steps.length), lit);
   const table = document.getElementById("detail-table");
   if (!step) { table.innerHTML = ""; return; }
   const names = termsOf(step);
@@ -326,7 +360,7 @@ function chart(title, series, marker) {
   const ticks = [low, (low + high) / 2, high].map(v => `<text x="${left - 4}" y="${y(v) + 3}" text-anchor="end" font-size="9" fill="var(--muted)">${Math.abs(high - low) < 3 ? v.toFixed(2) : v.toFixed(0)}</text><line x1="${left}" x2="${w - right}" y1="${y(v)}" y2="${y(v)}" stroke="var(--rule)" stroke-width="0.5"/>`).join("");
   const zero = `<line x1="${left}" x2="${w - right}" y1="${y(0)}" y2="${y(0)}" stroke="var(--muted)" stroke-width="0.8"/>`;
   const steps = `<text x="${left}" y="${h - 6}" font-size="9" fill="var(--muted)">step 1</text><text x="${w - right}" y="${h - 6}" font-size="9" text-anchor="end" fill="var(--muted)">${series.length}</text>`;
-  const dial = `<line x1="${x(marker)}" x2="${x(marker)}" y1="${top}" y2="${h - bottom}" stroke="var(--ink)" stroke-dasharray="3 2" stroke-width="0.8"/>`;
+  const dial = marker < 0 ? "" : `<line x1="${x(marker)}" x2="${x(marker)}" y1="${top}" y2="${h - bottom}" stroke="var(--ink)" stroke-dasharray="3 2" stroke-width="0.8"/>`;
   return `<div class="chart"><h3>${title}</h3><svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${title} by step">${ticks}${zero}<polygon points="${band}" fill="var(--band)"/><polyline points="${line}" fill="none" stroke="var(--chosen)" stroke-width="1.5"/>${steps}${dial}</svg></div>`;
 }
 
@@ -336,17 +370,18 @@ function renderCharts() {
     return { i, mean: s.n >= 2 ? s.mean : NaN, half: s.half };
   });
   document.getElementById("lift-charts").innerHTML = DATA.stepTerms.map((name, t) =>
-    chart(name, byStep(step => step.kind === "step" ? lift(step, t) : NaN), at)).join("");
+    chart(name, byStep(step => step.kind === "step" ? lift(step, t) : NaN), choiceAt())).join("");
   const measures = Object.keys(seeds[0].steps[0].measures);
   document.getElementById("measure-charts").innerHTML = measures.map(name =>
-    chart(name, byStep(step => step.measures[name]), at)).join("");
+    chart(name, byStep(step => step.measures[name]), choiceAt())).join("");
 }
 
 function render() {
   const input = document.getElementById("step");
   input.value = at;
-  document.getElementById("shown-step").textContent = `step ${at + 1} / ${longest}`;
-  document.getElementById("at-title").textContent = `Step ${at + 1} across ${seeds.length} seeds`;
+  const k = choiceAt();
+  document.getElementById("shown-step").textContent = k < 0 ? `loop ${at + 1} / ${growing}` : `step ${k + 1} / ${longest}`;
+  document.getElementById("at-title").textContent = k < 0 ? `First loop, frame ${at + 1} across ${seeds.length} seeds` : `Step ${k + 1} across ${seeds.length} seeds`;
   renderSeeds();
   renderAverages();
   renderDetail();
@@ -354,17 +389,18 @@ function render() {
 }
 
 function go(to) {
-  at = Math.max(0, Math.min(longest - 1, to));
+  at = Math.max(0, Math.min(growing + longest - 1, to));
   lit = 1;
   render();
 }
 
 document.getElementById("facts").textContent = `${DATA.width} × ${DATA.height} cells · ${DATA.zones} zones · seeds ${seeds.map(s => s.seed).join(", ")}` + (failed.length ? ` · failed: ${failed.join(", ")}` : "");
 const input = document.getElementById("step");
-input.max = longest - 1;
+input.max = growing + longest - 1;
 input.addEventListener("input", () => go(Number(input.value)));
 document.getElementById("back").addEventListener("click", () => go(at - 1));
 document.getElementById("on").addEventListener("click", () => go(at + 1));
+document.getElementById("to-steps").addEventListener("click", () => go(growing));
 document.addEventListener("keydown", e => {
   if (e.target.tagName === "INPUT") return;
   if (e.key === "ArrowLeft") go(at - 1);

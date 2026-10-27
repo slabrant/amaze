@@ -1,5 +1,5 @@
 use amaze::book::{STANDARD, zones_for};
-use amaze::generate::{Choice, Kind, generate_watched, total};
+use amaze::generate::{Choice, Event, Kind, generate_watched, total};
 use amaze::goals::{Measures, measure};
 use amaze::grid::{Cell, Grid};
 use amaze::maze::{Maze, Step};
@@ -80,15 +80,16 @@ fn main() -> ExitCode {
 }
 
 fn report(grid: Grid, seed: u64) -> Option<String> {
-    let mut first_loop = String::new();
+    let mut growth: Vec<String> = Vec::new();
     let mut steps: Vec<String> = Vec::new();
-    let made = generate_watched(grid, seed, zones_for(grid), |maze, choice| match choice {
-        None => first_loop = cells(maze.pieces().iter().map(|piece| piece.cell)),
-        Some(choice) => steps.push(step_report(maze, choice)),
+    let made = generate_watched(grid, seed, zones_for(grid), |event| match event {
+        Event::Loop(loop_cells) => growth.push(cells(loop_cells.iter().copied())),
+        Event::Chosen(maze, choice) => steps.push(step_report(maze, choice)),
     });
     let maze = made.ok()?;
     Some(format!(
-        r#"{{"seed":{seed},"loop":{first_loop},"start":{},"finish":{},"steps":[{}]}}"#,
+        r#"{{"seed":{seed},"growth":[{}],"start":{},"finish":{},"steps":[{}]}}"#,
+        growth.join(","),
         cell(maze.start),
         cell(maze.finish),
         steps.join(",")
