@@ -12,9 +12,10 @@ const LIGHT: Point = (
 );
 const DECK_BANDS: usize = 12;
 const DECK_SHADE: f64 = 0.3;
-const SHADOW_DEPTH: f64 = 0.3;
-const SHADOW_BANDS: usize = 6;
-const SHADOW: f64 = 0.62;
+const BRIDGE_SHADOW_REACH: f64 = 0.5;
+const BRIDGE_SHADOW_LAYERS: usize = 8;
+const BRIDGE_SHADOW_STEPS: usize = 16;
+const BRIDGE_SHADOW: f64 = 0.45;
 const BACKGROUND_SHADOW_DEPTH: f64 = 0.27;
 const BACKGROUND_SHADOW_LAYERS: usize = 8;
 const BACKGROUND_SHADOW: f64 = 0.5;
@@ -141,7 +142,8 @@ pub fn draw(maze: &Maze) -> Vec<Mark> {
     let mut fills: Vec<Vec<Point>> = Vec::new();
     let mut edges: Vec<Vec<Point>> = vec![frame(maze.grid)];
     let mut under: Vec<Vec<Point>> = Vec::new();
-    let mut shading: Vec<Mark> = Vec::new();
+    let mut bridge_shadows: Vec<Mark> = Vec::new();
+    let mut decks: Vec<Mark> = Vec::new();
     for cell in maze.grid.cells() {
         let ids = maze.pieces_in(cell);
         if ids.is_empty() {
@@ -189,7 +191,9 @@ pub fn draw(maze: &Maze) -> Vec<Mark> {
                         && maze.pieces_in(maze.piece(next).cell).len() == 2
                 })
             };
-            shading.extend(bridge(cell, along, [!flat(along), !flat(along.opposite())]));
+            let (shadow, deck) = bridge(cell, along, [!flat(along), !flat(along.opposite())]);
+            bridge_shadows.extend(shadow);
+            decks.extend(deck);
             edges.extend(across(cell, maze.piece(*top).has_side(Dir::North)));
             under.extend(across(cell, maze.piece(*lower).has_side(Dir::North)));
         }
@@ -200,7 +204,8 @@ pub fn draw(maze: &Maze) -> Vec<Mark> {
         points,
         colour: Colour::WHITE,
     }));
-    marks.extend(shading);
+    marks.extend(bridge_shadows);
+    marks.extend(decks);
     marks.extend(start_mark(maze, maze.start));
     marks.extend(finish_mark(maze, maze.finish));
     marks.push(lines(edges, EDGE, Colour::BLACK));
@@ -228,7 +233,7 @@ fn facing(dir: Dir) -> f64 {
     dx * LIGHT.0 + dy * LIGHT.1
 }
 
-fn bridge(cell: Cell, along: Dir, ramps: [bool; 2]) -> Vec<Mark> {
+fn bridge(cell: Cell, along: Dir, ramps: [bool; 2]) -> (Vec<Mark>, Vec<Mark>) {
     let (x, y) = centre(cell);
     let across = along.turned_right();
     let place = |a: f64, b: f64| {
@@ -257,22 +262,39 @@ fn bridge(cell: Cell, along: Dir, ramps: [bool; 2]) -> Vec<Mark> {
             });
         }
     }
-    let (side, sign) = if facing(across) >= 0.0 {
-        (across, 1.0)
-    } else {
-        (across.opposite(), -1.0)
+    let deck = Mark::Polygon {
+        points: rectangle((-0.5, 0.5), (-HALF, HALF)),
+        colour: Colour::WHITE,
     };
-    let depth = SHADOW_DEPTH * facing(side);
-    for band in 0..SHADOW_BANDS {
-        let from = HALF + depth * band as f64 / SHADOW_BANDS as f64;
-        let to = HALF + depth * (band + 1) as f64 / SHADOW_BANDS as f64;
-        let fade = band as f64 / SHADOW_BANDS as f64;
-        marks.push(Mark::Polygon {
-            points: rectangle((-HALF, HALF), (sign * from, sign * to)),
-            colour: Colour::grey(SHADOW + (1.0 - SHADOW) * fade),
-        });
-    }
-    marks
+    marks.insert(0, deck);
+    let sign = if facing(across) >= 0.0 { 1.0 } else { -1.0 };
+    let height = |a: f64| {
+        let ramp = if a >= 0.0 { ramps[0] } else { ramps[1] };
+        if ramp {
+            0.5 * (1.0 + (2.0 * std::f64::consts::PI * a).cos())
+        } else {
+            1.0
+        }
+    };
+    let edge: Vec<Point> = (0..=BRIDGE_SHADOW_STEPS)
+        .map(|i| place(i as f64 / BRIDGE_SHADOW_STEPS as f64 - 0.5, sign * HALF))
+        .collect();
+    let shadow = (1..=BRIDGE_SHADOW_LAYERS)
+        .rev()
+        .map(|layer| {
+            let reach = BRIDGE_SHADOW_REACH * layer as f64 / BRIDGE_SHADOW_LAYERS as f64;
+            let fade = (layer - 1) as f64 / BRIDGE_SHADOW_LAYERS as f64;
+            let cast = edge.iter().enumerate().rev().map(|(i, &(px, py))| {
+                let lift = reach * height(i as f64 / BRIDGE_SHADOW_STEPS as f64 - 0.5);
+                (px + LIGHT.0 * lift, py + LIGHT.1 * lift)
+            });
+            Mark::Polygon {
+                points: edge.iter().copied().chain(cast).collect(),
+                colour: Colour::grey(BRIDGE_SHADOW + (1.0 - BRIDGE_SHADOW) * fade),
+            }
+        })
+        .collect();
+    (shadow, marks)
 }
 
 fn corner(cell: Cell, a: Dir, b: Dir) -> Point {
