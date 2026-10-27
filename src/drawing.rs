@@ -12,6 +12,7 @@ const DECK_TILES_ALONG: usize = 24;
 const DECK_TILES_ACROSS: usize = 12;
 const DECK_SHADE: f64 = 0.3;
 const DECK_SUN_SIDE: f64 = 0.6;
+const DECK_FADE: f64 = 0.5;
 const TILE_OVERLAP: f64 = 0.003;
 const SHADOW_DEPTH: f64 = 0.3;
 const SHADOW_BANDS: usize = 6;
@@ -233,7 +234,11 @@ fn bridge(cell: Cell, along: Dir, ramps: [bool; 2]) -> Vec<Mark> {
     let down = |a: f64| {
         let ramp = if a >= 0.0 { ramps[0] } else { ramps[1] };
         if ramp && a * light_along > 0.0 {
-            2.0 * a.abs()
+            if a.abs() <= 0.5 {
+                2.0 * a.abs()
+            } else {
+                (1.0 - (a.abs() - 0.5) / DECK_FADE).max(0.0)
+            }
         } else {
             0.0
         }
@@ -241,11 +246,13 @@ fn bridge(cell: Cell, along: Dir, ramps: [bool; 2]) -> Vec<Mark> {
     let away = |b: f64| 1.0 - DECK_SUN_SIDE * (0.5 - b * light_across.signum() / CORRIDOR);
     let step = |n: usize| 1.0 / n as f64;
     let mut marks = Vec::new();
-    for i in 0..DECK_TILES_ALONG {
+    let reach = 0.5 + DECK_FADE;
+    let tiles = (2.0 * reach * DECK_TILES_ALONG as f64).round() as usize;
+    for i in 0..tiles {
         for j in 0..DECK_TILES_ACROSS {
             let (a0, a1) = (
-                i as f64 * step(DECK_TILES_ALONG) - 0.5,
-                (i + 1) as f64 * step(DECK_TILES_ALONG) - 0.5,
+                i as f64 * step(DECK_TILES_ALONG) - reach,
+                (i + 1) as f64 * step(DECK_TILES_ALONG) - reach,
             );
             let (b0, b1) = (
                 (j as f64 * step(DECK_TILES_ACROSS) - 0.5) * CORRIDOR,
