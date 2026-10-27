@@ -113,6 +113,16 @@ fn step_report(maze: &Maze, choice: &Choice) -> String {
                 / count as f64
         })
         .collect();
+    let spread: Vec<f64> = (0..terms)
+        .map(|t| {
+            let squares: f64 = choice
+                .candidates
+                .iter()
+                .map(|(_, terms)| (terms[t] - mean[t]).powi(2))
+                .sum();
+            (squares / count as f64).sqrt()
+        })
+        .collect();
     let flips: Vec<bool> = (0..terms)
         .map(|t| {
             let without = |terms: &[f64]| total(terms) - terms[t];
@@ -130,13 +140,14 @@ fn step_report(maze: &Maze, choice: &Choice) -> String {
         .map(|i| candidate(maze, &choice.candidates[i].0, &choice.candidates[i].1))
         .collect();
     format!(
-        r#"{{"kind":"{}","zone":{},"count":{count},"mean":{},"flips":{flips:?},"shown":[{}],"measures":{}}}"#,
+        r#"{{"kind":"{}","zone":{},"count":{count},"mean":{},"spread":{},"flips":{flips:?},"shown":[{}],"measures":{}}}"#,
         match choice.kind {
             Kind::ZoneStart => "zone start",
             Kind::Step => "step",
         },
         choice.step().zone,
         numbers(&mean),
+        numbers(&spread),
         shown.join(","),
         measures(&measure(maze))
     )

@@ -1,7 +1,10 @@
 use crate::goals::zone_counts;
 use crate::grid::{Cell, Dir, Grid};
 use crate::maze::{Content, Maze, PieceId, Step, StepCell};
-use crate::score::{STEP_TERMS, Scoring, ZONE_START_TERMS, foreign_share, zone_start_terms};
+use crate::score::{
+    STEP_PRIORITIES, STEP_TERMS, Scoring, ZONE_START_PRIORITIES, ZONE_START_TERMS, foreign_share,
+    zone_start_terms,
+};
 use rand::prelude::*;
 use std::collections::HashSet;
 
@@ -36,8 +39,35 @@ impl Choice {
     fn of(
         kind: Kind,
         terms: &'static [&'static str],
-        candidates: Vec<(Step, Vec<f64>)>,
+        priorities: &[f64],
+        raw: Vec<(Step, Vec<f64>)>,
     ) -> Option<Choice> {
+        let count = raw.len() as f64;
+        let scale: Vec<(f64, f64)> = (0..terms.len())
+            .map(|t| {
+                let mean = raw.iter().map(|(_, terms)| terms[t]).sum::<f64>() / count;
+                let squares: f64 = raw.iter().map(|(_, terms)| (terms[t] - mean).powi(2)).sum();
+                (mean, (squares / count).sqrt())
+            })
+            .collect();
+        let candidates: Vec<(Step, Vec<f64>)> = raw
+            .into_iter()
+            .map(|(step, terms)| {
+                let normal = terms
+                    .iter()
+                    .zip(&scale)
+                    .zip(priorities)
+                    .map(|((&value, &(mean, spread)), &priority)| {
+                        if spread > 0.0 {
+                            priority * (value - mean) / spread
+                        } else {
+                            0.0
+                        }
+                    })
+                    .collect();
+                (step, normal)
+            })
+            .collect();
         let chosen = candidates
             .iter()
             .enumerate()
@@ -94,7 +124,13 @@ pub fn generate_watched(
                 (step, terms)
             })
             .collect();
-        let choice = Choice::of(Kind::ZoneStart, &ZONE_START_TERMS, scored).ok_or(Failed)?;
+        let choice = Choice::of(
+            Kind::ZoneStart,
+            &ZONE_START_TERMS,
+            &ZONE_START_PRIORITIES,
+            scored,
+        )
+        .ok_or(Failed)?;
         entry = choice.step().from;
         maze.make_step(choice.step()).map_err(|_| Failed)?;
         if zone + 1 == zones {
@@ -160,7 +196,7 @@ fn best_step(maze: &Maze, rng: &mut StdRng) -> Option<Choice> {
             (step, terms)
         })
         .collect();
-    Choice::of(Kind::Step, &STEP_TERMS, scored)
+    Choice::of(Kind::Step, &STEP_TERMS, &STEP_PRIORITIES, scored)
 }
 
 fn place_finish(maze: &mut Maze, zones: usize) -> Result<(), Failed> {

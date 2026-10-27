@@ -2,16 +2,6 @@ use crate::goals::{LONG_ROUTE, cells_near, zone_counts};
 use crate::grid::Cell;
 use crate::maze::{Content, Maze, PieceId, Routes, Step, StepCell};
 
-const JOIN_ROUTE_WEIGHT: f64 = 0.5;
-const SHARE_WEIGHT: f64 = 1000.0;
-const SHORT_ROUTE_WEIGHT: f64 = 5.0;
-const NEAR_SOLUTION_WEIGHT: f64 = 100.0;
-const CROSSING_WEIGHT: f64 = 1.0;
-const CROSSING_IN_A_ROW_WEIGHT: f64 = 1.0;
-const EMPTY_CELL_WEIGHT: f64 = 0.5;
-const MIXING_WEIGHT: f64 = 8.0;
-const FINISH_NEAR_START_WEIGHT: f64 = 10.0;
-
 pub struct Scoring {
     solution: Solution,
     counts: Vec<Vec<usize>>,
@@ -41,7 +31,7 @@ impl Scoring {
     pub fn step(&self, maze: &Maze, step: &Step) -> Vec<f64> {
         let fair_share = 1.0 / self.shares.len() as f64;
         let mut terms = step_terms(maze, &self.solution, &self.counts, step);
-        terms.push(-SHARE_WEIGHT * (self.shares[step.zone] - fair_share));
+        terms.push(fair_share - self.shares[step.zone]);
         terms
     }
 }
@@ -56,12 +46,16 @@ pub const STEP_TERMS: [&str; 7] = [
     "zone size",
 ];
 
+pub const STEP_PRIORITIES: [f64; 7] = [2.0, 35.0, 1.0, 1.0, 1.0, 9.0, 51.0];
+
 pub const ZONE_START_TERMS: [&str; 4] = [
     "join route",
     "circuit cells",
     "join distance",
     "finish near start",
 ];
+
+pub const ZONE_START_PRIORITIES: [f64; 4] = [26.0, 38.0, 13.0, 95.0];
 
 pub fn zone_start_terms(maze: &Maze, entry: PieceId, step: &Step, last: bool) -> Vec<f64> {
     let route = maze.routes_from(&[entry]).distances[step.from];
@@ -76,12 +70,12 @@ pub fn zone_start_terms(maze: &Maze, entry: PieceId, step: &Step, last: bool) ->
         .min()
         .unwrap_or(usize::MAX);
     let finish_away = if last {
-        FINISH_NEAR_START_WEIGHT * (start_to_loop as f64).sqrt()
+        (start_to_loop as f64).sqrt()
     } else {
         0.0
     };
     vec![
-        JOIN_ROUTE_WEIGHT * route as f64,
+        route as f64,
         step.cells.len() as f64,
         (crow as f64).sqrt(),
         -finish_away,
@@ -168,12 +162,12 @@ fn step_terms(maze: &Maze, solution: &Solution, counts: &[Vec<usize>], step: &St
         .filter(|c| maze.content(c.cell) == Content::Empty)
         .count();
     vec![
-        NEAR_SOLUTION_WEIGHT * near_fraction,
-        -SHORT_ROUTE_WEIGHT * short_route_shortfall(maze, step),
-        CROSSING_WEIGHT * crossings as f64,
-        CROSSING_IN_A_ROW_WEIGHT * crossings_in_a_row as f64,
-        EMPTY_CELL_WEIGHT * empty_cells as f64,
-        MIXING_WEIGHT * mixing(maze, counts, step),
+        near_fraction,
+        -short_route_shortfall(maze, step),
+        crossings as f64,
+        crossings_in_a_row as f64,
+        empty_cells as f64,
+        mixing(maze, counts, step),
     ]
 }
 

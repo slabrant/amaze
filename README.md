@@ -87,7 +87,8 @@ Builds several mazes (8 by default) and writes a page showing every step of each
 side by side, with why each step was chosen. Before the steps, it shows the first
 loop growing one bump at a time.
 
-- Term: one weighted part of a step's score. A step's score is the sum of its terms.
+- Term: one part of a step's score. A step's score is the sum of its terms.
+- Priority: how much say a term has. At each choice, every term is rescaled by how much it varies among the steps on offer, then multiplied by its priority, so a term's pull is its priority whatever its units. Priorities are in `src/score.rs`.
 - Lift: how far the chosen step's term is above the average step it was picked from.
 - Decides: how often leaving the term out would have changed which step was chosen.
 
