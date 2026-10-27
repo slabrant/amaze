@@ -1,14 +1,16 @@
 use crate::drawing::{Colour, Mark};
+use miniz_oxide::deflate::compress_to_vec_zlib;
 use std::fmt::Write;
 
 pub const LETTER: (f64, f64) = (612.0, 792.0);
 
+const COMPRESSION: u8 = 9;
 const CURVE: f64 = 0.552_284_75;
 
 pub fn pdf(pages: &[Vec<Mark>]) -> Vec<u8> {
     let (width, height) = LETTER;
-    let mut objects = vec![
-        "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+    let mut objects: Vec<Vec<u8>> = vec![
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
         format!(
             "<< /Type /Pages /Kids [{}] /Count {} >>",
             (0..pages.len())
@@ -16,37 +18,48 @@ pub fn pdf(pages: &[Vec<Mark>]) -> Vec<u8> {
                 .collect::<Vec<_>>()
                 .join(" "),
             pages.len()
-        ),
+        )
+        .into_bytes(),
     ];
     for (i, marks) in pages.iter().enumerate() {
-        objects.push(format!(
-            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {width} {height}] /Contents {} 0 R >>",
-            4 + 2 * i
-        ));
-        let content = content(marks, height);
-        objects.push(format!(
-            "<< /Length {} >>\nstream\n{content}endstream",
+        objects.push(
+            format!(
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {width} {height}] /Contents {} 0 R >>",
+                4 + 2 * i
+            )
+            .into_bytes(),
+        );
+        let content = compress_to_vec_zlib(content(marks, height).as_bytes(), COMPRESSION);
+        let mut stream = format!(
+            "<< /Length {} /Filter /FlateDecode >>\nstream\n",
             content.len()
-        ));
+        )
+        .into_bytes();
+        stream.extend(content);
+        stream.extend(b"\nendstream");
+        objects.push(stream);
     }
-    let mut file = String::from("%PDF-1.4\n");
+    let mut file = b"%PDF-1.4\n".to_vec();
     let mut offsets = Vec::new();
     for (i, object) in objects.iter().enumerate() {
         offsets.push(file.len());
-        write!(file, "{} 0 obj\n{object}\nendobj\n", i + 1).unwrap();
+        file.extend(format!("{} 0 obj\n", i + 1).into_bytes());
+        file.extend(object);
+        file.extend(b"\nendobj\n");
     }
     let xref = file.len();
-    write!(file, "xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).unwrap();
+    let mut table = format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1);
     for offset in offsets {
-        writeln!(file, "{offset:010} 00000 n ").unwrap();
+        writeln!(table, "{offset:010} 00000 n ").unwrap();
     }
     write!(
-        file,
+        table,
         "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
         objects.len() + 1
     )
     .unwrap();
-    file.into_bytes()
+    file.extend(table.into_bytes());
+    file
 }
 
 fn content(marks: &[Mark], height: f64) -> String {
@@ -135,10 +148,11 @@ mod tests {
             radius: 5.0,
             colour: Colour::BLACK,
         }];
-        let file = String::from_utf8(pdf(&[page.clone(), page])).unwrap();
-        assert!(file.starts_with("%PDF-1.4\n"));
-        let xref = file.find("\nxref\n").unwrap() + 1;
-        let listed: Vec<usize> = file[xref..]
+        let file = pdf(&[page.clone(), page]);
+        assert!(file.starts_with(b"%PDF-1.4\n"));
+        let xref = file.windows(6).rposition(|w| w == b"\nxref\n").unwrap() + 1;
+        let tail = String::from_utf8(file[xref..].to_vec()).unwrap();
+        let listed: Vec<usize> = tail
             .lines()
             .skip(3)
             .take_while(|line| line.ends_with(" n "))
@@ -146,9 +160,9 @@ mod tests {
             .collect();
         assert_eq!(listed.len(), 6);
         for (i, offset) in listed.into_iter().enumerate() {
-            assert!(file[offset..].starts_with(&format!("{} 0 obj", i + 1)));
+            assert!(file[offset..].starts_with(format!("{} 0 obj", i + 1).as_bytes()));
         }
-        let startxref: usize = file.lines().rev().nth(1).unwrap().parse().unwrap();
+        let startxref: usize = tail.lines().rev().nth(1).unwrap().parse().unwrap();
         assert_eq!(startxref, xref);
     }
 }

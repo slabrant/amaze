@@ -6,15 +6,18 @@ const HALF: f64 = CORRIDOR / 2.0;
 const EDGE: f64 = 0.06;
 const UNDER_EDGE: f64 = 0.042;
 const UNDER_DASH: [f64; 2] = [0.08, 0.07];
-const LIGHT: Point = (0.6, 0.8);
+const LIGHT: Point = (
+    std::f64::consts::FRAC_1_SQRT_2,
+    std::f64::consts::FRAC_1_SQRT_2,
+);
 const DECK_BANDS: usize = 12;
 const DECK_SHADE: f64 = 0.3;
 const SHADOW_DEPTH: f64 = 0.3;
 const SHADOW_BANDS: usize = 6;
 const SHADOW: f64 = 0.62;
-const BACKGROUND_SHADOW_DEPTH: f64 = 0.2;
-const BACKGROUND_SHADOW_LAYERS: usize = 5;
-const BACKGROUND_SHADOW: f64 = 0.6;
+const BACKGROUND_SHADOW_DEPTH: f64 = 0.27;
+const BACKGROUND_SHADOW_LAYERS: usize = 8;
+const BACKGROUND_SHADOW: f64 = 0.5;
 const ROUNDING: f64 = 0.25;
 const OVERLAP: f64 = 0.02;
 const INNER_ROUNDING: f64 = 0.1;
