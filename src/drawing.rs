@@ -10,8 +10,11 @@ const LIGHT: Point = (
     std::f64::consts::FRAC_1_SQRT_2,
     std::f64::consts::FRAC_1_SQRT_2,
 );
-const DECK_BANDS: usize = 12;
-const DECK_SHADE: f64 = 0.3;
+const DECK_TILES_ALONG: usize = 36;
+const DECK_TILES_ACROSS: usize = 20;
+const DECK_SHADE: f64 = 0.12;
+const DECK_SHOULDER: f64 = 0.4;
+const TILE_OVERLAP: f64 = 0.003;
 const SHADOW_DEPTH: f64 = 0.3;
 const SHADOW_BANDS: usize = 6;
 const SHADOW: f64 = 0.62;
@@ -238,22 +241,39 @@ fn bridge(cell: Cell, along: Dir, ramps: [bool; 2]) -> Vec<Mark> {
     let rectangle = |(a0, a1): (f64, f64), (b0, b1): (f64, f64)| {
         vec![place(a0, b0), place(a1, b0), place(a1, b1), place(a0, b1)]
     };
+    let rounding = |r: f64| (std::f64::consts::FRAC_PI_2 * r.min(1.0)).cos().powi(2);
+    let height = |a: f64, b: f64| {
+        let ramp = if a >= 0.0 { ramps[0] } else { ramps[1] };
+        let rise = if ramp { rounding(2.0 * a.abs()) } else { 1.0 };
+        rise * (1.0 - DECK_SHOULDER * (1.0 - rounding((b.abs() / HALF).powi(4))))
+    };
+    let (light_along, light_across) = (facing(along), facing(across));
+    let step = |n: usize| 1.0 / n as f64;
     let mut marks = Vec::new();
-    for ((dir, sign), ramp) in [(along, 1.0), (along.opposite(), -1.0)]
-        .into_iter()
-        .zip(ramps)
-    {
-        let away = facing(dir).max(0.0);
-        if away == 0.0 || !ramp {
-            continue;
-        }
-        for band in 0..DECK_BANDS {
-            let from = 0.5 * band as f64 / DECK_BANDS as f64;
-            let to = 0.5 * (band + 1) as f64 / DECK_BANDS as f64;
-            let slope = (std::f64::consts::PI * (band as f64 + 0.5) / DECK_BANDS as f64).sin();
+    for i in 0..DECK_TILES_ALONG {
+        for j in 0..DECK_TILES_ACROSS {
+            let (a0, a1) = (
+                i as f64 * step(DECK_TILES_ALONG) - 0.5,
+                (i + 1) as f64 * step(DECK_TILES_ALONG) - 0.5,
+            );
+            let (b0, b1) = (
+                (j as f64 * step(DECK_TILES_ACROSS) - 0.5) * CORRIDOR,
+                ((j + 1) as f64 * step(DECK_TILES_ACROSS) - 0.5) * CORRIDOR,
+            );
+            let (a, b) = ((a0 + a1) / 2.0, (b0 + b1) / 2.0);
+            let slope_along = (height(a1, b) - height(a0, b)) / (a1 - a0);
+            let slope_across = (height(a, b1) - height(a, b0)) / (b1 - b0);
+            let toward_light = slope_along * light_along + slope_across * light_across;
+            let tone = 1.0 - DECK_SHADE * (-toward_light).max(0.0);
+            if tone > 0.995 {
+                continue;
+            }
             marks.push(Mark::Polygon {
-                points: rectangle((sign * (from - OVERLAP).max(0.0), sign * to), (-HALF, HALF)),
-                colour: Colour::grey(1.0 - DECK_SHADE * away * slope),
+                points: rectangle(
+                    (a0 - TILE_OVERLAP, a1 + TILE_OVERLAP),
+                    (b0 - TILE_OVERLAP, b1 + TILE_OVERLAP),
+                ),
+                colour: Colour::grey(tone),
             });
         }
     }
