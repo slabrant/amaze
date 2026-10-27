@@ -48,14 +48,9 @@ pub const STEP_TERMS: [&str; 7] = [
 
 pub const STEP_PRIORITIES: [f64; 7] = [2.0, 35.0, 1.0, 1.0, 1.0, 9.0, 51.0];
 
-pub const ZONE_START_TERMS: [&str; 4] = [
-    "joins apart by route",
-    "first path length",
-    "joins apart",
-    "finish near start",
-];
+pub const ZONE_START_TERMS: [&str; 3] = ["joins apart", "first path length", "finish near start"];
 
-pub const ZONE_START_PRIORITIES: [f64; 4] = [26.0, 38.0, 13.0, 95.0];
+pub const ZONE_START_PRIORITIES: [f64; 3] = [39.0, 38.0, 95.0];
 
 pub fn zone_start_terms(maze: &Maze, entry: PieceId, step: &Step, last: bool) -> Vec<f64> {
     let route = maze.routes_from(&[entry]).distances[step.from];
@@ -75,9 +70,8 @@ pub fn zone_start_terms(maze: &Maze, entry: PieceId, step: &Step, last: bool) ->
         0.0
     };
     vec![
-        route as f64,
+        (route as f64 + (crow as f64).sqrt()) / 2.0,
         step.cells.len() as f64,
-        (crow as f64).sqrt(),
         -finish_away,
     ]
 }

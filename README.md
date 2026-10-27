@@ -44,14 +44,15 @@ filled. If a zone cannot be started, generation fails.
 1. Long way round: for two paths in the same or neighbouring cells, the shortest route between them is long.
 2. Solution coverage: most maze cells are a few cells from the solution, as the crow flies.
 3. Crossings, and crossings in a row: many crossings, including one path having several crossings one after another.
-4. Joins apart: the junctions where zones join are far apart.
+4. Joins apart: the junctions where zones join are far apart, both as the crow flies and by route.
 5. A small number of zones.
 6. Filling: few empty cells.
 7. Finish near start: start and finish are near each other, as the crow flies.
+8. Zones mixed: each zone is spread among the other zones' paths.
+9. Zone balance: zones are about the same size.
 
-Steps are also scored on zones mixed (a step going among other zones' paths) and
-zone balance (smaller zones catch up). Steps that start a zone are also scored on
-joins apart by route and first path length.
+Steps that start a zone are also scored on first path length, so the next zone
+has room to start from it.
 
 ## Measures
 
