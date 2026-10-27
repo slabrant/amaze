@@ -11,7 +11,8 @@ const LIGHT: Point = (
     std::f64::consts::FRAC_1_SQRT_2,
 );
 const DECK_BANDS: usize = 24;
-const DECK_LIT: f64 = 0.045;
+const DECK_SHADE: f64 = 0.11;
+const DECK_LIT_SHADE: f64 = 0.025;
 const SHADOW_DEPTH: f64 = 0.3;
 const SHADOW_BANDS: usize = 6;
 const SHADOW: f64 = 0.62;
@@ -40,7 +41,6 @@ pub struct Colour {
 impl Colour {
     pub const BLACK: Colour = Colour::grey(0.0);
     pub const WHITE: Colour = Colour::grey(1.0);
-    pub const PATH: Colour = Colour::grey(0.92);
     pub const UNDER: Colour = Colour::grey(0.55);
     pub const START: Colour = Colour {
         red: 0.86,
@@ -199,7 +199,7 @@ pub fn draw(maze: &Maze) -> Vec<Mark> {
     marks.extend(outside_frame(maze.grid));
     marks.extend(fills.into_iter().map(|points| Mark::Polygon {
         points,
-        colour: Colour::PATH,
+        colour: Colour::WHITE,
     }));
     marks.extend(shading);
     marks.extend(start_mark(maze, maze.start));
@@ -230,7 +230,7 @@ fn facing(dir: Dir) -> f64 {
 }
 
 fn deck_tone(rise: f64) -> f64 {
-    (Colour::PATH.red + DECK_LIT * rise).min(1.0)
+    1.0 - DECK_SHADE * (-rise).max(0.0) - DECK_LIT_SHADE * rise.max(0.0)
 }
 
 fn bridge(cell: Cell, along: Dir, ramps: [bool; 2]) -> Vec<Mark> {
@@ -258,7 +258,7 @@ fn bridge(cell: Cell, along: Dir, ramps: [bool; 2]) -> Vec<Mark> {
         let to = (band + 1) as f64 / DECK_BANDS as f64 - 0.5;
         let rise = (height(to) - height(from)) * DECK_BANDS as f64 * toward;
         let tone = deck_tone(rise);
-        if (tone - Colour::PATH.red).abs() < 1e-3 {
+        if (tone - Colour::WHITE.red).abs() < 1e-3 {
             continue;
         }
         marks.push(Mark::Polygon {
