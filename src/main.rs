@@ -12,7 +12,7 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     };
     let seed = match args.get(1).map(|seed| seed.parse::<u64>()) {
-        None => 0,
+        None => rand::random::<u32>() as u64,
         Some(Ok(seed)) => seed,
         Some(Err(_)) => {
             eprintln!("seed must be a whole number");
@@ -24,7 +24,10 @@ fn main() -> ExitCode {
         minis_per_level: MINIS_PER_LEVEL,
     };
     match std::fs::write(out, pdf(&book(seed, &contents))) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => {
+            println!("seed {seed}");
+            ExitCode::SUCCESS
+        }
         Err(error) => {
             eprintln!("could not write {out}: {error}");
             ExitCode::FAILURE

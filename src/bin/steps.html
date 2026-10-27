@@ -1,0 +1,378 @@
+<meta charset="utf-8">
+<title>Maze Step Report</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Lab notebook: a sticky step dial, then seeds side by side, then the numbers behind each choice. */
+:root {
+  --paper: #f7f8fa;
+  --card: #ffffff;
+  --ink: #1b1f27;
+  --muted: #5d6573;
+  --rule: #dde1e8;
+  --chosen: #d02626;
+  --runner: #7a2fd6;
+  --good: #1f7a4d;
+  --bad: #b3401f;
+  --band: rgba(208, 38, 38, 0.14);
+  --zone-0: #8a96ab;
+  --zone-1: #4f9a8f;
+  --zone-2: #c49a3a;
+  --zone-3: #5b79c9;
+  --zone-4: #b0679b;
+  --zone-5: #7b8f3d;
+  --display: "Public Sans", "Helvetica Neue", Arial, sans-serif;
+  --body: "Public Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #12151b; --card: #1a1e26; --ink: #e8ebf0; --muted: #9aa3b2; --rule: #2c323d;
+    --chosen: #ff5a4f; --runner: #b07cff; --good: #4fc28a; --bad: #ff8a5c; --band: rgba(255, 90, 79, 0.18);
+    --zone-0: #6d7890; --zone-1: #4f9a8f; --zone-2: #b8913a; --zone-3: #6a86d6; --zone-4: #b9729f; --zone-5: #8aa045;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #12151b; --card: #1a1e26; --ink: #e8ebf0; --muted: #9aa3b2; --rule: #2c323d;
+  --chosen: #ff5a4f; --runner: #b07cff; --good: #4fc28a; --bad: #ff8a5c; --band: rgba(255, 90, 79, 0.18);
+  --zone-0: #6d7890; --zone-1: #4f9a8f; --zone-2: #b8913a; --zone-3: #6a86d6; --zone-4: #b9729f; --zone-5: #8aa045;
+  color-scheme: dark;
+}
+body { background: var(--paper); color: var(--ink); font-family: var(--body); line-height: 1.45; }
+main { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 0 48px; display: grid; gap: 36px; max-width: 1400px; margin: 0 auto; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--card); }
+header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--card); border-bottom: 1px solid var(--rule); padding-block: 12px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; }
+h1 { font-family: var(--display); font-size: 1.15rem; margin: 0; font-weight: 700; }
+h2 { font-family: var(--display); font-size: 1.05rem; margin: 0 0 4px; text-wrap: balance; }
+.meta { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); }
+.dial { display: flex; align-items: center; gap: 8px; flex: 1 1 320px; min-width: 0; }
+.dial input[type=range] { flex: 1; min-width: 0; accent-color: var(--chosen); }
+.dial output { font-family: var(--mono); font-variant-numeric: tabular-nums; min-width: 9ch; }
+button { font: inherit; font-size: 0.85rem; background: var(--paper); color: var(--ink); border: 1px solid var(--rule); border-radius: 4px; padding: 4px 10px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button:focus-visible, input:focus-visible, .seed:focus-visible { outline: 2px solid var(--chosen); outline-offset: 2px; }
+.lede { color: var(--muted); max-width: 70ch; margin: 0 0 12px; font-size: 0.9rem; }
+.key { display: inline-flex; gap: 14px; flex-wrap: wrap; font-size: 0.8rem; color: var(--muted); }
+.swatch { display: inline-block; width: 18px; height: 4px; vertical-align: middle; margin-right: 5px; border-radius: 2px; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; font-size: 0.85rem; width: 100%; }
+th, td { padding: 5px 10px; text-align: right; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { font-weight: 600; color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; }
+td { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+td:first-child { font-family: var(--body); }
+.chip { display: inline-block; font-family: var(--body); font-size: 0.72rem; font-weight: 600; padding: 1px 7px; border-radius: 10px; border: 1px solid currentColor; }
+.chip.yes { color: var(--good); }
+.chip.no { color: var(--muted); }
+.pos { color: var(--good); }
+.neg { color: var(--bad); }
+.seeds { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.seed { background: var(--card); border: 1px solid var(--rule); border-radius: 6px; padding: 8px; display: grid; gap: 6px; cursor: pointer; min-width: 0; }
+.seed.picked { border-color: var(--chosen); box-shadow: 0 0 0 1px var(--chosen); }
+.seed canvas { width: 100%; height: auto; display: block; }
+.seed .line { font-size: 0.78rem; display: flex; justify-content: space-between; gap: 8px; }
+.seed .why { font-size: 0.78rem; color: var(--muted); }
+.seed .why b { color: var(--ink); font-weight: 600; }
+.split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.split canvas { width: 100%; max-width: 460px; height: auto; background: var(--card); border: 1px solid var(--rule); border-radius: 6px; }
+tr.candidate { cursor: pointer; }
+tr.candidate:hover, tr.candidate.lit { background: var(--paper); }
+.charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.chart { background: var(--card); border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; min-width: 0; }
+.chart h3 { font-size: 0.8rem; margin: 0 0 4px; font-weight: 600; }
+.chart svg { width: 100%; height: auto; display: block; }
+.note { font-size: 0.8rem; color: var(--muted); }
+</style>
+
+<header>
+  <h1>Maze Step Report</h1>
+  <span class="meta" id="facts"></span>
+  <div class="dial">
+    <button id="back" type="button" aria-label="Previous step">&larr;</button>
+    <input id="step" type="range" min="0" value="0" aria-label="Step">
+    <button id="on" type="button" aria-label="Next step">&rarr;</button>
+    <output id="shown-step" for="step"></output>
+  </div>
+</header>
+
+<main>
+  <section>
+    <h2>Which terms steer the choice</h2>
+    <p class="lede">Each step is picked from many candidates by the sum of its terms. <b>Lift</b> is how far the chosen step's term sits above the average candidate's, averaged per seed, with a 95% interval across seeds. A term whose interval crosses zero is not steering the choice. <b>Decides</b> is how often removing the term would change which step wins.</p>
+    <div class="scroll"><table id="summary-steps"></table></div>
+    <p class="note" id="summary-note"></p>
+    <div class="scroll"><table id="summary-zone-starts"></table></div>
+  </section>
+
+  <section>
+    <h2 id="at-title"></h2>
+    <p class="lede"><span class="key"><span><span class="swatch" style="background:var(--chosen)"></span>chosen step</span><span><span class="swatch" style="background:var(--runner)"></span>runner-up</span><span>thin lines: the maze so far, coloured by zone</span></span></p>
+    <div class="seeds" id="seeds"></div>
+  </section>
+
+  <section>
+    <h2>Averages at this step</h2>
+    <p class="lede" id="at-note"></p>
+    <div class="scroll"><table id="at-table"></table></div>
+  </section>
+
+  <section>
+    <h2 id="detail-title"></h2>
+    <p class="lede">The best candidates for this seed at this step, chosen first. Point at a row to draw it.</p>
+    <div class="split">
+      <canvas id="detail" width="600" height="760"></canvas>
+      <div class="scroll"><table id="detail-table"></table></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Lift by step</h2>
+    <p class="lede">Mean lift of each term at each step across seeds, with its 95% band. The dashed line marks the step on the dial.</p>
+    <div class="charts" id="lift-charts"></div>
+  </section>
+
+  <section>
+    <h2>Goal measures by step</h2>
+    <p class="lede">The maze measured after each step, mean across seeds with its 95% band.</p>
+    <div class="charts" id="measure-charts"></div>
+  </section>
+</main>
+
+<script>
+const DATA = "__DATA__";
+const T95 = [0, 12.71, 4.30, 3.18, 2.78, 2.57, 2.45, 2.36, 2.31, 2.26, 2.23, 2.20, 2.18, 2.16, 2.14, 2.13, 2.12, 2.11, 2.10, 2.09, 2.09, 2.08, 2.07, 2.07, 2.06, 2.06, 2.06, 2.05, 2.05, 2.05, 2.04];
+const seeds = DATA.seeds.filter(s => !s.failed);
+const failed = DATA.failed;
+const longest = Math.max(...seeds.map(s => s.steps.length));
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const zoneColour = zone => css(`--zone-${zone % 6}`);
+let at = 0;
+let picked = 0;
+let lit = 1;
+
+function stats(values) {
+  const n = values.length;
+  if (n === 0) return { n, mean: NaN, half: NaN };
+  const mean = values.reduce((a, b) => a + b, 0) / n;
+  if (n < 2) return { n, mean, half: NaN };
+  const variance = values.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1);
+  return { n, mean, half: (T95[Math.min(n - 1, 30)] || 1.96) * Math.sqrt(variance / n) };
+}
+const significant = s => s.n > 1 && Math.abs(s.mean) > s.half;
+const fmt = (x, digits = 2) => Number.isFinite(x) ? x.toFixed(digits) : "–";
+const signed = x => Number.isFinite(x) ? (x >= 0 ? "+" : "") + x.toFixed(2) : "–";
+const cls = x => x > 0 ? "pos" : x < 0 ? "neg" : "";
+const total = terms => terms.reduce((a, b) => a + b, 0);
+const termsOf = step => step.kind === "step" ? DATA.stepTerms : DATA.zoneStartTerms;
+const lift = (step, t) => step.shown[0].terms[t] - step.mean[t];
+const overRunner = (step, t) => step.shown.length > 1 ? step.shown[0].terms[t] - step.shown[1].terms[t] : NaN;
+
+function summary(kind, id) {
+  const names = kind === "step" ? DATA.stepTerms : DATA.zoneStartTerms;
+  const rows = names.map((name, t) => {
+    const perSeed = seeds.map(s => s.steps.filter(x => x.kind === kind));
+    const lifts = stats(perSeed.filter(l => l.length).map(l => l.reduce((a, x) => a + lift(x, t), 0) / l.length));
+    const runners = stats(perSeed.filter(l => l.length).map(l => {
+      const v = l.map(x => overRunner(x, t)).filter(Number.isFinite);
+      return v.reduce((a, b) => a + b, 0) / Math.max(v.length, 1);
+    }));
+    const chosen = stats(perSeed.flat().map(x => x.shown[0].terms[t]));
+    const all = perSeed.flat();
+    const decides = all.filter(x => x.flips[t]).length / Math.max(all.length, 1);
+    return `<tr><td>${name}</td><td>${fmt(chosen.mean)}</td><td class="${cls(lifts.mean)}">${signed(lifts.mean)} ± ${fmt(lifts.half)}</td><td>${significant(lifts) ? '<span class="chip yes">steers</span>' : '<span class="chip no">noise</span>'}</td><td class="${cls(runners.mean)}">${signed(runners.mean)}</td><td>${fmt(100 * decides, 0)}%</td></tr>`;
+  });
+  const label = kind === "step" ? "Step term" : "Zone start term";
+  document.getElementById(id).innerHTML = `<thead><tr><th>${label}</th><th>Chosen mean</th><th>Lift ± 95%</th><th></th><th>Over runner-up</th><th>Decides</th></tr></thead><tbody>${rows.join("")}</tbody>`;
+}
+
+function cellSize(canvas) {
+  return Math.min(canvas.width / DATA.width, canvas.height / DATA.height);
+}
+
+function drawRoute(ctx, size, cells, colour, width, dash, closed) {
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = width;
+  ctx.setLineDash(dash || []);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  cells.forEach(([x, y], i) => {
+    const px = (x + 0.5) * size, py = (y + 0.5) * size;
+    i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+  });
+  if (closed) ctx.closePath();
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawMark(ctx, size, cell, colour) {
+  if (!cell) return;
+  ctx.fillStyle = colour;
+  ctx.fillRect(cell[0] * size + size * 0.15, cell[1] * size + size * 0.15, size * 0.7, size * 0.7);
+}
+
+function drawMaze(canvas, seed, upTo, highlight) {
+  const ctx = canvas.getContext("2d");
+  const size = cellSize(canvas);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = css("--card");
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = css("--rule");
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0.5, 0.5, DATA.width * size - 1, DATA.height * size - 1);
+  const base = Math.max(1, size * 0.22);
+  drawRoute(ctx, size, seed.loop, zoneColour(0), base, null, true);
+  seed.steps.slice(0, upTo).forEach(step => drawRoute(ctx, size, step.shown[0].cells, zoneColour(step.zone), base));
+  drawMark(ctx, size, seed.start, css("--chosen"));
+  drawMark(ctx, size, seed.finish, css("--runner"));
+  const step = seed.steps[upTo];
+  if (!step) return;
+  const second = step.shown[highlight];
+  if (second) drawRoute(ctx, size, second.cells, css("--runner"), Math.max(1.5, size * 0.3), [size * 0.4, size * 0.3]);
+  drawRoute(ctx, size, step.shown[0].cells, css("--chosen"), Math.max(2, size * 0.38));
+}
+
+function deciding(step) {
+  const names = termsOf(step);
+  if (step.shown.length < 2) return "only candidate";
+  const gaps = names.map((name, t) => [name, overRunner(step, t)]).sort((a, b) => b[1] - a[1]);
+  const margin = total(step.shown[0].terms) - total(step.shown[1].terms);
+  if (margin === 0) return `<b>tie</b> with the runner-up`;
+  return `won by ${fmt(margin)}, mostly <b>${gaps[0][0]}</b> (${signed(gaps[0][1])})`;
+}
+
+function renderSeeds() {
+  const holder = document.getElementById("seeds");
+  if (!holder.children.length) {
+    seeds.forEach((seed, i) => {
+      const card = document.createElement("div");
+      card.className = "seed";
+      card.tabIndex = 0;
+      card.innerHTML = `<canvas width="${DATA.width * 12}" height="${DATA.height * 12}"></canvas><div class="line"><b>seed ${seed.seed}</b><span class="kind"></span></div><div class="why"></div>`;
+      const pick = () => { picked = i; lit = 1; render(); };
+      card.addEventListener("click", pick);
+      card.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+      holder.appendChild(card);
+    });
+  }
+  [...holder.children].forEach((card, i) => {
+    const seed = seeds[i];
+    const step = seed.steps[at];
+    card.classList.toggle("picked", i === picked);
+    drawMaze(card.querySelector("canvas"), seed, Math.min(at, seed.steps.length), 1);
+    card.querySelector(".kind").textContent = step ? `${step.kind}, zone ${step.zone + 1}` : "finished";
+    card.querySelector(".why").innerHTML = step ? `${deciding(step)}; ${step.count} candidates` : `done after ${seed.steps.length} steps`;
+  });
+}
+
+function renderAverages() {
+  const steps = seeds.map(s => s.steps[at]).filter(Boolean);
+  const kinds = [...new Set(steps.map(s => s.kind))];
+  const note = document.getElementById("at-note");
+  note.textContent = `${steps.length} of ${seeds.length} seeds reach this step` + (kinds.length > 1 ? "; they are at different kinds of step, so only matching ones are averaged." : ".");
+  const kind = kinds.includes("step") ? "step" : kinds[0];
+  const same = steps.filter(s => s.kind === kind);
+  if (!same.length) { document.getElementById("at-table").innerHTML = ""; return; }
+  const names = termsOf(same[0]);
+  const ties = same.filter(s => s.shown.length > 1 && total(s.shown[0].terms) === total(s.shown[1].terms)).length;
+  if (ties) note.textContent += ` ${ties} of ${same.length} are ties with the runner-up, so the pick among equals is arbitrary.`;
+  const rows = names.map((name, t) => {
+    const chosen = stats(same.map(s => s.shown[0].terms[t]));
+    const lifts = stats(same.map(s => lift(s, t)));
+    const runners = stats(same.map(s => overRunner(s, t)).filter(Number.isFinite));
+    const flips = same.filter(s => s.flips[t]).length;
+    return `<tr><td>${name}</td><td>${fmt(chosen.mean)} ± ${fmt(chosen.half)}</td><td class="${cls(lifts.mean)}">${signed(lifts.mean)} ± ${fmt(lifts.half)}</td><td>${significant(lifts) ? '<span class="chip yes">steers</span>' : '<span class="chip no">noise</span>'}</td><td class="${cls(runners.mean)}">${signed(runners.mean)}</td><td>${flips} of ${same.length}</td></tr>`;
+  });
+  const margins = stats(same.filter(s => s.shown.length > 1).map(s => total(s.shown[0].terms) - total(s.shown[1].terms)));
+  rows.push(`<tr><td><b>total</b></td><td></td><td></td><td></td><td>${signed(margins.mean)}</td><td></td></tr>`);
+  document.getElementById("at-table").innerHTML = `<thead><tr><th>${kind === "step" ? "Step term" : "Zone start term"}</th><th>Chosen ± 95%</th><th>Lift ± 95%</th><th></th><th>Over runner-up</th><th>Decides</th></tr></thead><tbody>${rows.join("")}</tbody>`;
+}
+
+function renderDetail() {
+  const seed = seeds[picked];
+  const step = seed.steps[at];
+  document.getElementById("detail-title").textContent = step ? `Seed ${seed.seed}, step ${at + 1}: ${step.kind} in zone ${step.zone + 1}` : `Seed ${seed.seed} is finished`;
+  const canvas = document.getElementById("detail");
+  canvas.height = Math.round(canvas.width * DATA.height / DATA.width);
+  drawMaze(canvas, seed, Math.min(at, seed.steps.length), lit);
+  const table = document.getElementById("detail-table");
+  if (!step) { table.innerHTML = ""; return; }
+  const names = termsOf(step);
+  const head = `<thead><tr><th>Candidate</th>${names.map(n => `<th>${n}</th>`).join("")}<th>Total</th><th>Cells</th></tr></thead>`;
+  const rows = step.shown.map((c, i) => `<tr class="candidate${i === lit ? " lit" : ""}" data-i="${i}"><td>${i === 0 ? '<span class="swatch" style="background:var(--chosen)"></span>chosen' : `#${i + 1}`}</td>${c.terms.map(v => `<td>${fmt(v)}</td>`).join("")}<td><b>${fmt(total(c.terms))}</b></td><td>${c.cells.length - 2}</td></tr>`);
+  const mean = `<tr><td>average of ${step.count}</td>${step.mean.map(v => `<td>${fmt(v)}</td>`).join("")}<td>${fmt(total(step.mean))}</td><td></td></tr>`;
+  table.innerHTML = head + `<tbody>${rows.join("")}${mean}</tbody>`;
+  table.querySelectorAll("tr.candidate").forEach(row => {
+    const show = () => { const i = Number(row.dataset.i); if (i > 0 && i !== lit) { lit = i; renderDetail(); } };
+    row.addEventListener("mouseenter", show);
+    row.addEventListener("click", show);
+  });
+}
+
+function chart(title, series, marker) {
+  const w = 300, h = 140, left = 38, right = 6, top = 8, bottom = 20;
+  const points = series.filter(p => Number.isFinite(p.mean));
+  if (!points.length) return "";
+  const lows = points.map(p => Number.isFinite(p.half) ? p.mean - p.half : p.mean);
+  const highs = points.map(p => Number.isFinite(p.half) ? p.mean + p.half : p.mean);
+  let low = Math.min(0, ...lows), high = Math.max(0, ...highs);
+  if (high === low) high = low + 1;
+  const x = i => left + (w - left - right) * i / Math.max(series.length - 1, 1);
+  const y = v => top + (h - top - bottom) * (1 - (v - low) / (high - low));
+  const band = points.map((p, i) => `${x(p.i)},${y(highs[i])}`).concat(points.map((p, i) => `${x(p.i)},${y(lows[i])}`).reverse()).join(" ");
+  const line = points.map(p => `${x(p.i)},${y(p.mean)}`).join(" ");
+  const ticks = [low, (low + high) / 2, high].map(v => `<text x="${left - 4}" y="${y(v) + 3}" text-anchor="end" font-size="9" fill="var(--muted)">${Math.abs(high - low) < 3 ? v.toFixed(2) : v.toFixed(0)}</text><line x1="${left}" x2="${w - right}" y1="${y(v)}" y2="${y(v)}" stroke="var(--rule)" stroke-width="0.5"/>`).join("");
+  const zero = `<line x1="${left}" x2="${w - right}" y1="${y(0)}" y2="${y(0)}" stroke="var(--muted)" stroke-width="0.8"/>`;
+  const steps = `<text x="${left}" y="${h - 6}" font-size="9" fill="var(--muted)">step 1</text><text x="${w - right}" y="${h - 6}" font-size="9" text-anchor="end" fill="var(--muted)">${series.length}</text>`;
+  const dial = `<line x1="${x(marker)}" x2="${x(marker)}" y1="${top}" y2="${h - bottom}" stroke="var(--ink)" stroke-dasharray="3 2" stroke-width="0.8"/>`;
+  return `<div class="chart"><h3>${title}</h3><svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${title} by step">${ticks}${zero}<polygon points="${band}" fill="var(--band)"/><polyline points="${line}" fill="none" stroke="var(--chosen)" stroke-width="1.5"/>${steps}${dial}</svg></div>`;
+}
+
+function renderCharts() {
+  const byStep = f => Array.from({ length: longest }, (_, i) => {
+    const s = stats(seeds.map(seed => seed.steps[i]).filter(Boolean).map(step => f(step)).filter(Number.isFinite));
+    return { i, mean: s.n >= 2 ? s.mean : NaN, half: s.half };
+  });
+  document.getElementById("lift-charts").innerHTML = DATA.stepTerms.map((name, t) =>
+    chart(name, byStep(step => step.kind === "step" ? lift(step, t) : NaN), at)).join("");
+  const measures = Object.keys(seeds[0].steps[0].measures);
+  document.getElementById("measure-charts").innerHTML = measures.map(name =>
+    chart(name, byStep(step => step.measures[name]), at)).join("");
+}
+
+function render() {
+  const input = document.getElementById("step");
+  input.value = at;
+  document.getElementById("shown-step").textContent = `step ${at + 1} / ${longest}`;
+  document.getElementById("at-title").textContent = `Step ${at + 1} across ${seeds.length} seeds`;
+  renderSeeds();
+  renderAverages();
+  renderDetail();
+  renderCharts();
+}
+
+function go(to) {
+  at = Math.max(0, Math.min(longest - 1, to));
+  lit = 1;
+  render();
+}
+
+document.getElementById("facts").textContent = `${DATA.width} × ${DATA.height} cells · ${DATA.zones} zones · seeds ${seeds.map(s => s.seed).join(", ")}` + (failed.length ? ` · failed: ${failed.join(", ")}` : "");
+const input = document.getElementById("step");
+input.max = longest - 1;
+input.addEventListener("input", () => go(Number(input.value)));
+document.getElementById("back").addEventListener("click", () => go(at - 1));
+document.getElementById("on").addEventListener("click", () => go(at + 1));
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") return;
+  if (e.key === "ArrowLeft") go(at - 1);
+  if (e.key === "ArrowRight") go(at + 1);
+});
+summary("step", "summary-steps");
+summary("zone start", "summary-zone-starts");
+document.getElementById("summary-note").textContent = `${seeds.length} seeds. With fewer than about 6 seeds the intervals are too wide to tell much.`;
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
+render();
+</script>

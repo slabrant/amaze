@@ -6,7 +6,7 @@ pub mod grid;
 pub mod maze;
 pub mod pdf;
 pub mod rules;
-mod score;
+pub mod score;
 pub mod solvers;
 
 #[cfg(test)]

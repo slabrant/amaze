@@ -38,14 +38,32 @@ impl Scoring {
         &self.counts
     }
 
-    pub fn step(&self, maze: &Maze, step: &Step) -> f64 {
+    pub fn step(&self, maze: &Maze, step: &Step) -> Vec<f64> {
         let fair_share = 1.0 / self.shares.len() as f64;
-        step_score(maze, &self.solution, &self.counts, step)
-            - SHARE_WEIGHT * (self.shares[step.zone] - fair_share)
+        let mut terms = step_terms(maze, &self.solution, &self.counts, step);
+        terms.push(-SHARE_WEIGHT * (self.shares[step.zone] - fair_share));
+        terms
     }
 }
 
-pub fn zone_start_score(maze: &Maze, entry: PieceId, step: &Step, last: bool) -> f64 {
+pub const STEP_TERMS: [&str; 7] = [
+    "near solution",
+    "short routes",
+    "crossings",
+    "crossings in a row",
+    "empty cells",
+    "mixing",
+    "zone size",
+];
+
+pub const ZONE_START_TERMS: [&str; 4] = [
+    "join route",
+    "circuit cells",
+    "join distance",
+    "finish near start",
+];
+
+pub fn zone_start_terms(maze: &Maze, entry: PieceId, step: &Step, last: bool) -> Vec<f64> {
     let route = maze.routes_from(&[entry]).distances[step.from];
     let crow = maze
         .piece(entry)
@@ -62,7 +80,12 @@ pub fn zone_start_score(maze: &Maze, entry: PieceId, step: &Step, last: bool) ->
     } else {
         0.0
     };
-    JOIN_ROUTE_WEIGHT * route as f64 + step.cells.len() as f64 + (crow as f64).sqrt() - finish_away
+    vec![
+        JOIN_ROUTE_WEIGHT * route as f64,
+        step.cells.len() as f64,
+        (crow as f64).sqrt(),
+        -finish_away,
+    ]
 }
 
 struct Solution {
@@ -130,7 +153,7 @@ fn near_fraction(near: Vec<bool>) -> f64 {
     near.iter().filter(|&&is_near| is_near).count() as f64 / near.len() as f64
 }
 
-fn step_score(maze: &Maze, solution: &Solution, counts: &[Vec<usize>], step: &Step) -> f64 {
+fn step_terms(maze: &Maze, solution: &Solution, counts: &[Vec<usize>], step: &Step) -> Vec<f64> {
     let near_fraction = solution.near_fraction_after(maze, step);
     let is_crossing = |c: &StepCell| maze.content(c.cell) == Content::Path;
     let crossings = step.cells.iter().filter(|c| is_crossing(c)).count();
@@ -144,11 +167,14 @@ fn step_score(maze: &Maze, solution: &Solution, counts: &[Vec<usize>], step: &St
         .iter()
         .filter(|c| maze.content(c.cell) == Content::Empty)
         .count();
-    NEAR_SOLUTION_WEIGHT * near_fraction - SHORT_ROUTE_WEIGHT * short_route_shortfall(maze, step)
-        + CROSSING_WEIGHT * crossings as f64
-        + CROSSING_IN_A_ROW_WEIGHT * crossings_in_a_row as f64
-        + EMPTY_CELL_WEIGHT * empty_cells as f64
-        + MIXING_WEIGHT * mixing(maze, counts, step)
+    vec![
+        NEAR_SOLUTION_WEIGHT * near_fraction,
+        -SHORT_ROUTE_WEIGHT * short_route_shortfall(maze, step),
+        CROSSING_WEIGHT * crossings as f64,
+        CROSSING_IN_A_ROW_WEIGHT * crossings_in_a_row as f64,
+        EMPTY_CELL_WEIGHT * empty_cells as f64,
+        MIXING_WEIGHT * mixing(maze, counts, step),
+    ]
 }
 
 pub fn foreign_share(counts: &[Vec<usize>], at: usize, zone: usize) -> f64 {

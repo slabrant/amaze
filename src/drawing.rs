@@ -8,6 +8,13 @@ const UNDER_EDGE: f64 = 0.042;
 const UNDER_DASH: [f64; 2] = [0.08, 0.07];
 const HATCH_SPACING: f64 = 0.16;
 const HATCH_WIDTH: f64 = 0.018;
+const HATCH_DEGREES: f64 = 75.0;
+const LIGHT: Point = (0.6, 0.8);
+const DECK_BANDS: usize = 12;
+const DECK_SHADE: f64 = 0.3;
+const SHADOW_DEPTH: f64 = 0.3;
+const SHADOW_BANDS: usize = 6;
+const SHADOW: f64 = 0.62;
 const ROUNDING: f64 = 0.25;
 const OVERLAP: f64 = 0.02;
 const INNER_ROUNDING: f64 = 0.1;
@@ -133,6 +140,7 @@ pub fn draw(maze: &Maze) -> Vec<Mark> {
     marks.extend(outside_frame(maze.grid));
     let mut edges: Vec<Vec<Point>> = vec![frame(maze.grid)];
     let mut under: Vec<Vec<Point>> = Vec::new();
+    let mut shading: Vec<Mark> = Vec::new();
     for cell in maze.grid.cells() {
         let ids = maze.pieces_in(cell);
         if ids.is_empty() {
@@ -177,10 +185,24 @@ pub fn draw(maze: &Maze) -> Vec<Mark> {
         }
         edges.extend(wall_faces(&ring));
         if let [lower, top] = ids {
+            let along = if maze.piece(*top).has_side(Dir::North) {
+                Dir::South
+            } else {
+                Dir::East
+            };
+            let flat = |dir: Dir| {
+                maze.piece(*top).links.iter().any(|&(side, next)| {
+                    side == dir
+                        && maze.pieces_in(maze.piece(next).cell).last() == Some(&next)
+                        && maze.pieces_in(maze.piece(next).cell).len() == 2
+                })
+            };
+            shading.extend(bridge(cell, along, [!flat(along), !flat(along.opposite())]));
             edges.extend(across(cell, maze.piece(*top).has_side(Dir::North)));
             under.extend(across(cell, maze.piece(*lower).has_side(Dir::North)));
         }
     }
+    marks.extend(shading);
     marks.extend(start_mark(maze, maze.start));
     marks.extend(finish_mark(maze, maze.finish));
     marks.push(lines(edges, EDGE, Colour::BLACK));
@@ -201,6 +223,58 @@ fn offset(dir: Dir) -> Point {
         Dir::South => (0.0, 1.0),
         Dir::West => (-1.0, 0.0),
     }
+}
+
+fn facing(dir: Dir) -> f64 {
+    let (dx, dy) = offset(dir);
+    dx * LIGHT.0 + dy * LIGHT.1
+}
+
+fn bridge(cell: Cell, along: Dir, ramps: [bool; 2]) -> Vec<Mark> {
+    let (x, y) = centre(cell);
+    let across = along.turned_right();
+    let place = |a: f64, b: f64| {
+        let ((ux, uy), (wx, wy)) = (offset(along), offset(across));
+        (x + ux * a + wx * b, y + uy * a + wy * b)
+    };
+    let rectangle = |(a0, a1): (f64, f64), (b0, b1): (f64, f64)| {
+        vec![place(a0, b0), place(a1, b0), place(a1, b1), place(a0, b1)]
+    };
+    let mut marks = Vec::new();
+    for ((dir, sign), ramp) in [(along, 1.0), (along.opposite(), -1.0)]
+        .into_iter()
+        .zip(ramps)
+    {
+        let away = facing(dir).max(0.0);
+        if away == 0.0 || !ramp {
+            continue;
+        }
+        for band in 0..DECK_BANDS {
+            let from = 0.5 * band as f64 / DECK_BANDS as f64;
+            let to = 0.5 * (band + 1) as f64 / DECK_BANDS as f64;
+            let slope = (std::f64::consts::PI * (band as f64 + 0.5) / DECK_BANDS as f64).sin();
+            marks.push(Mark::Polygon {
+                points: rectangle((sign * (from - OVERLAP).max(0.0), sign * to), (-HALF, HALF)),
+                colour: Colour::grey(1.0 - DECK_SHADE * away * slope),
+            });
+        }
+    }
+    let (side, sign) = if facing(across) >= 0.0 {
+        (across, 1.0)
+    } else {
+        (across.opposite(), -1.0)
+    };
+    let depth = SHADOW_DEPTH * facing(side);
+    for band in 0..SHADOW_BANDS {
+        let from = HALF + depth * band as f64 / SHADOW_BANDS as f64;
+        let to = HALF + depth * (band + 1) as f64 / SHADOW_BANDS as f64;
+        let fade = band as f64 / SHADOW_BANDS as f64;
+        marks.push(Mark::Polygon {
+            points: rectangle((-HALF, HALF), (sign * from, sign * to)),
+            colour: Colour::grey(SHADOW + (1.0 - SHADOW) * fade),
+        });
+    }
+    marks
 }
 
 fn corner(cell: Cell, a: Dir, b: Dir) -> Point {
@@ -414,21 +488,31 @@ fn half_route(maze: &Maze, id: PieceId, edge: Point) -> Vec<Point> {
 
 fn hatching(grid: Grid) -> Mark {
     let (width, height) = (grid.width as f64, grid.height as f64);
-    let count = ((width + height) / HATCH_SPACING).ceil() as usize;
+    let angle = HATCH_DEGREES.to_radians();
+    let along = (angle.cos(), -angle.sin());
+    let normal = (angle.sin(), angle.cos());
+    let reach = |(x, y): Point| x * normal.0 + y * normal.1;
+    let corners = [(0.0, 0.0), (width, 0.0), (0.0, height), (width, height)];
+    let lowest = corners.iter().map(|&p| reach(p)).fold(f64::MAX, f64::min);
+    let highest = corners.iter().map(|&p| reach(p)).fold(f64::MIN, f64::max);
+    let count = ((highest - lowest) / HATCH_SPACING).ceil() as usize;
     let lines = (1..count)
-        .map(|i| {
-            let offset = i as f64 * HATCH_SPACING;
-            let start = if offset <= height {
-                (0.0, offset)
-            } else {
-                (offset - height, height)
-            };
-            let end = if offset <= width {
-                (offset, 0.0)
-            } else {
-                (width, offset - width)
-            };
-            vec![start, end]
+        .filter_map(|i| {
+            let offset = lowest + i as f64 * HATCH_SPACING;
+            let base = (normal.0 * offset, normal.1 * offset);
+            let mut span = (f64::MIN, f64::MAX);
+            for (start, step, limit) in [(base.0, along.0, width), (base.1, along.1, height)] {
+                if step.abs() < 1e-12 {
+                    if start < 0.0 || start > limit {
+                        return None;
+                    }
+                    continue;
+                }
+                let (a, b) = ((0.0 - start) / step, (limit - start) / step);
+                span = (span.0.max(a.min(b)), span.1.min(a.max(b)));
+            }
+            let at = |t: f64| (base.0 + along.0 * t, base.1 + along.1 * t);
+            (span.0 < span.1).then(|| vec![at(span.0), at(span.1)])
         })
         .collect();
     Mark::Lines {

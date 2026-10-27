@@ -1,7 +1,7 @@
 use crate::goals::zone_counts;
 use crate::grid::{Cell, Dir, Grid};
 use crate::maze::{Content, Maze, PieceId, Step, StepCell};
-use crate::score::{Scoring, foreign_share, zone_start_score};
+use crate::score::{STEP_TERMS, Scoring, ZONE_START_TERMS, foreign_share, zone_start_terms};
 use rand::prelude::*;
 use std::collections::HashSet;
 
@@ -17,7 +17,58 @@ const NEAR_ENDS: usize = 8;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Failed;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    ZoneStart,
+    Step,
+}
+
+pub struct Choice {
+    pub kind: Kind,
+    pub terms: &'static [&'static str],
+    pub candidates: Vec<(Step, Vec<f64>)>,
+    pub chosen: usize,
+}
+
+impl Choice {
+    fn of(
+        kind: Kind,
+        terms: &'static [&'static str],
+        candidates: Vec<(Step, Vec<f64>)>,
+    ) -> Option<Choice> {
+        let chosen = candidates
+            .iter()
+            .enumerate()
+            .map(|(i, (_, terms))| (total(terms), i))
+            .max_by(|a, b| a.0.total_cmp(&b.0))?
+            .1;
+        Some(Choice {
+            kind,
+            terms,
+            candidates,
+            chosen,
+        })
+    }
+
+    pub fn step(&self) -> &Step {
+        &self.candidates[self.chosen].0
+    }
+}
+
+pub fn total(terms: &[f64]) -> f64 {
+    terms.iter().sum()
+}
+
 pub fn generate(grid: Grid, seed: u64, zones: usize) -> Result<Maze, Failed> {
+    generate_watched(grid, seed, zones, |_, _| {})
+}
+
+pub fn generate_watched(
+    grid: Grid,
+    seed: u64,
+    zones: usize,
+    mut watch: impl FnMut(&Maze, Option<&Choice>),
+) -> Result<Maze, Failed> {
     if grid.width < 4 || grid.height < 4 || zones == 0 {
         return Err(Failed);
     }
@@ -26,23 +77,30 @@ pub fn generate(grid: Grid, seed: u64, zones: usize) -> Result<Maze, Failed> {
     maze.start = *path_cells_in_zone(&maze, 0)
         .choose(&mut rng)
         .ok_or(Failed)?;
+    watch(&maze, None);
     let mut entry = maze.pieces_in(maze.start)[0];
     for zone in 1..zones {
         let counts = zone_counts(&maze);
-        let step = candidates(&maze, &mut rng, &counts, zone, ZONE_START_ATTEMPTS)
+        let scored = candidates(&maze, &mut rng, &counts, zone, ZONE_START_ATTEMPTS)
             .map(|step| {
-                let score = zone_start_score(&maze, entry, &step, zone + 1 == zones);
-                (score, step)
+                let terms = zone_start_terms(&maze, entry, &step, zone + 1 == zones);
+                (step, terms)
             })
-            .max_by(|a, b| a.0.total_cmp(&b.0))
-            .map(|(_, step)| step)
-            .ok_or(Failed)?;
-        entry = step.from;
-        maze.make_step(&step).map_err(|_| Failed)?;
+            .collect();
+        let choice = Choice::of(Kind::ZoneStart, &ZONE_START_TERMS, scored).ok_or(Failed)?;
+        entry = choice.step().from;
+        maze.make_step(choice.step()).map_err(|_| Failed)?;
+        if zone + 1 == zones {
+            place_finish(&mut maze, zones)?;
+        }
+        watch(&maze, Some(&choice));
     }
-    place_finish(&mut maze, zones)?;
-    while let Some(step) = best_step(&maze, &mut rng) {
-        maze.make_step(&step).map_err(|_| Failed)?;
+    if zones == 1 {
+        place_finish(&mut maze, zones)?;
+    }
+    while let Some(choice) = best_step(&maze, &mut rng) {
+        maze.make_step(choice.step()).map_err(|_| Failed)?;
+        watch(&maze, Some(&choice));
     }
     Ok(maze)
 }
@@ -65,18 +123,21 @@ fn candidates<'a>(
         .take(wanted)
 }
 
-fn best_step(maze: &Maze, rng: &mut StdRng) -> Option<Step> {
+fn best_step(maze: &Maze, rng: &mut StdRng) -> Option<Choice> {
     let scoring = Scoring::of(maze);
     let steps: Vec<Step> = (0..maze.zones())
         .flat_map(|zone| {
             candidates(maze, rng, scoring.counts(), zone, ATTEMPTS).collect::<Vec<_>>()
         })
         .collect();
-    steps
+    let scored = steps
         .into_iter()
-        .map(|step| (scoring.step(maze, &step), step))
-        .max_by(|a, b| a.0.total_cmp(&b.0))
-        .map(|(_, step)| step)
+        .map(|step| {
+            let terms = scoring.step(maze, &step);
+            (step, terms)
+        })
+        .collect();
+    Choice::of(Kind::Step, &STEP_TERMS, scored)
 }
 
 fn place_finish(maze: &mut Maze, zones: usize) -> Result<(), Failed> {

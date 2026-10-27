@@ -50,7 +50,8 @@ filled. If a zone cannot be started, generation fails.
 ## Look
 
 - Paths are white with thin black edges, about three quarters of a cell wide. No walls.
-- The space between paths is lightly hatched, and a black line with rounded corners runs round the outside.
+- The space between paths is lightly hatched at 75 degrees, and a black line with rounded corners runs round the outside.
+- Light comes from the top left. Where the top path of a crossing rises or falls, the slope facing away from the light is shaded, and the top path casts a soft shadow on the lower path.
 - Turns are rounded, inside and outside.
 - At a crossing, the top path is whole and the lower path's edges carry on across it as grey dashes.
 - A crossing where both paths run the same way: undecided (dashed edges, or a narrower top path).
@@ -62,6 +63,7 @@ filled. If a zone cannot be started, generation fails.
 
 - A book: Trivial, Easy, Standard and Hard one to a page, then mini Trivial, Easy, Standard and Hard four to a page.
 - Each solution is printed mirrored on the back of its page.
+- With no seed given, a random one is used and printed.
 - The back shows only the solution: a thick line whose colour runs from red at the start to purple at the finish, with a gap where it goes under another path. Being mirrored, it lines up when the page is held to the light.
 
 ## Exceptions
@@ -74,3 +76,17 @@ Places where generation treats something differently from the rest.
 - Start and finish cells are never made into crossings.
 - The book retries a maze that fails with another seed, and every maze has at least two zones.
 - Grids smaller than 4 by 4 are refused.
+
+## Step report
+
+`cargo run --release --bin steps -- report.html [seeds] [first seed] [width height]`
+
+Builds several mazes (8 by default) and writes a page showing every step of each,
+side by side, with why each step was chosen.
+
+- Term: one weighted part of a step's score. A step's score is the sum of its terms.
+- Lift: how far the chosen step's term is above the average step it was picked from.
+- Decides: how often leaving the term out would have changed which step was chosen.
+
+Lifts are averaged per maze, then given a 95% interval across mazes. A term whose
+interval crosses zero is not steering the choice.
