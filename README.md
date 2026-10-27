@@ -21,7 +21,9 @@ Printable mazes where paths go over and under each other.
 
 ## Building
 
-Start with one loop. Then make steps, each picked from the steps the rules
+Start with one loop: a small rectangle somewhere in the grid, grown by pushing
+out two cells at a time, each time where the loop is least crowded, so it
+reaches across the grid. Then make steps, each picked from the steps the rules
 allow, favouring the goals. Each step is in one zone. A new zone starts with a
 step whose two ends join the same cell of the last zone. Steps are never undone
 or changed. Steps are made until no step is allowed, when the area is nearly

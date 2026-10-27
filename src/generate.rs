@@ -11,6 +11,8 @@ const CANDIDATES: usize = 40;
 const ALWAYS_SOME: f64 = 0.2;
 const FIRST_LOOP_SHARE: f64 = 0.35;
 const BUMP_ATTEMPTS: usize = 100_000;
+const BUMP_CHOICES: usize = 30;
+const CROWD_REACH: usize = 2;
 const ZONE_START_CANDIDATES: usize = 200;
 const NEAR_ENDS: usize = 8;
 
@@ -198,8 +200,8 @@ fn path_cells_in_zone(maze: &Maze, zone: usize) -> Vec<Cell> {
 }
 
 fn first_loop(grid: Grid, rng: &mut StdRng, grew: &mut impl FnMut(&[Cell])) -> Vec<Cell> {
-    let width = grid.width - 2;
-    let height = grid.height - 2;
+    let width = rng.random_range(2..=((grid.width - 2) / 4).max(2));
+    let height = rng.random_range(2..=((grid.height - 2) / 4).max(2));
     let left = rng.random_range(1..=grid.width - 1 - width);
     let top = rng.random_range(1..=grid.height - 1 - height);
     let right = left + width - 1;
@@ -216,29 +218,45 @@ fn first_loop(grid: Grid, rng: &mut StdRng, grew: &mut impl FnMut(&[Cell])) -> V
         (1..grid.width - 1).contains(&cell.x) && (1..grid.height - 1).contains(&cell.y)
     };
     let wanted = (FIRST_LOOP_SHARE * (grid.width * grid.height) as f64) as usize;
-    for _ in 0..BUMP_ATTEMPTS {
-        if cells.len() >= wanted {
+    let crowding = |taken: &HashSet<Cell>, new: [Cell; 2]| {
+        new.iter()
+            .flat_map(|&cell| grid.around(cell, CROWD_REACH))
+            .filter(|cell| taken.contains(cell))
+            .count()
+    };
+    let mut attempts = 0;
+    while cells.len() < wanted && attempts < BUMP_ATTEMPTS {
+        let mut best: Option<(usize, usize, [Cell; 2])> = None;
+        let mut found = 0;
+        while found < BUMP_CHOICES && attempts < BUMP_ATTEMPTS {
+            attempts += 1;
+            let i = rng.random_range(0..cells.len());
+            let (a, b) = (cells[i], cells[(i + 1) % cells.len()]);
+            let Some(along) = Dir::between(a, b) else {
+                continue;
+            };
+            let side = *[along.turned_left(), along.turned_right()]
+                .choose(rng)
+                .unwrap_or(&along);
+            if let (Some(a_out), Some(b_out)) = (grid.neighbour(a, side), grid.neighbour(b, side))
+                && inside(a_out)
+                && inside(b_out)
+                && !taken.contains(&a_out)
+                && !taken.contains(&b_out)
+            {
+                found += 1;
+                let crowd = crowding(&taken, [a_out, b_out]);
+                if best.is_none_or(|(least, _, _)| crowd < least) {
+                    best = Some((crowd, i, [a_out, b_out]));
+                }
+            }
+        }
+        let Some((_, i, new)) = best else {
             break;
-        }
-        let i = rng.random_range(0..cells.len());
-        let (a, b) = (cells[i], cells[(i + 1) % cells.len()]);
-        let Some(along) = Dir::between(a, b) else {
-            continue;
         };
-        let side = *[along.turned_left(), along.turned_right()]
-            .choose(rng)
-            .unwrap_or(&along);
-        let bump = (grid.neighbour(a, side), grid.neighbour(b, side));
-        if let (Some(a_out), Some(b_out)) = bump
-            && inside(a_out)
-            && inside(b_out)
-            && !taken.contains(&a_out)
-            && !taken.contains(&b_out)
-        {
-            cells.splice(i + 1..i + 1, [a_out, b_out]);
-            taken.extend([a_out, b_out]);
-            grew(&cells);
-        }
+        cells.splice(i + 1..i + 1, new);
+        taken.extend(new);
+        grew(&cells);
     }
     cells
 }
