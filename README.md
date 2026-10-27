@@ -51,7 +51,7 @@ filled. If a zone cannot be started, generation fails.
 
 - Paths are white with thin black edges, about three quarters of a cell wide. No walls.
 - The space between paths is plain white, and a black line with rounded corners runs round the outside.
-- Light comes from the top left. Every path casts a soft shadow onto the background. The top path of a crossing rises and falls: its slope facing away from the light darkens steadily towards the bottom and fades back to white beyond it, lighter on the side nearer the light, and it casts a soft shadow on the lower path.
+- Light comes from the top left. Every path casts a soft shadow onto the background. The top path of a crossing rises and falls: its slope facing away from the light darkens steadily towards the bottom and fades back to white beyond it, lighter on the side nearer the light, and the lower path is shaded on both sides as it dips under, more on the side away from the light.
 - Turns are rounded, inside and outside.
 - At a crossing, the top path is whole and hides the lower path.
 - A crossing where both paths run the same way: undecided (dashed edges, or a narrower top path).

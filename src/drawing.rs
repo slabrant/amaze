@@ -15,7 +15,8 @@ const DECK_SUN_SIDE: f64 = 0.6;
 const DECK_FADE: f64 = 0.25;
 const TILE_OVERLAP: f64 = 0.003;
 const SHADOW_DEPTH: f64 = 0.3;
-const SHADOW_BANDS: usize = 6;
+const SHADOW_BANDS: usize = 12;
+const SUN_SIDE_SHADOW: f64 = 0.6;
 const SHADOW: f64 = 0.62;
 const BACKGROUND_SHADOW_DEPTH: f64 = 0.27;
 const BACKGROUND_SHADOW_LAYERS: usize = 8;
@@ -271,20 +272,21 @@ fn bridge(cell: Cell, along: Dir, ramps: [bool; 2]) -> Vec<Mark> {
             });
         }
     }
-    let (side, sign) = if facing(across) >= 0.0 {
-        (across, 1.0)
-    } else {
-        (across.opposite(), -1.0)
-    };
-    let depth = SHADOW_DEPTH * facing(side);
-    for band in 0..SHADOW_BANDS {
-        let from = HALF + depth * band as f64 / SHADOW_BANDS as f64;
-        let to = HALF + depth * (band + 1) as f64 / SHADOW_BANDS as f64;
-        let fade = band as f64 / SHADOW_BANDS as f64;
-        marks.push(Mark::Polygon {
-            points: rectangle((-HALF, HALF), (sign * from, sign * to)),
-            colour: Colour::grey(SHADOW + (1.0 - SHADOW) * fade),
-        });
+    for sign in [1.0, -1.0] {
+        let darkness = if sign * light_across >= 0.0 {
+            1.0 - SHADOW
+        } else {
+            (1.0 - SHADOW) * SUN_SIDE_SHADOW
+        };
+        for band in 0..SHADOW_BANDS {
+            let from = HALF + SHADOW_DEPTH * band as f64 / SHADOW_BANDS as f64;
+            let to = HALF + SHADOW_DEPTH * (band + 1) as f64 / SHADOW_BANDS as f64;
+            let fade = band as f64 / SHADOW_BANDS as f64;
+            marks.push(Mark::Polygon {
+                points: rectangle((-HALF, HALF), (sign * from, sign * (to + TILE_OVERLAP))),
+                colour: Colour::grey(1.0 - darkness * (1.0 - fade)),
+            });
+        }
     }
     marks
 }
