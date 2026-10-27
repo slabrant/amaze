@@ -41,13 +41,32 @@ filled. If a zone cannot be started, generation fails.
 
 ## Goals
 
-1. For two paths in the same or neighbouring cells, the shortest route between them is long.
-2. Most maze cells are a few cells from the solution, as the crow flies.
-3. Many crossings, including one path having several crossings one after another.
-4. The junctions where zones join are far apart.
+1. Long way round: for two paths in the same or neighbouring cells, the shortest route between them is long.
+2. Solution coverage: most maze cells are a few cells from the solution, as the crow flies.
+3. Crossings, and crossings in a row: many crossings, including one path having several crossings one after another.
+4. Joins apart: the junctions where zones join are far apart.
 5. A small number of zones.
-6. Few empty cells.
-7. Start and finish are near each other, as the crow flies.
+6. Filling: few empty cells.
+7. Finish near start: start and finish are near each other, as the crow flies.
+
+Steps are also scored on zones mixed (a step going among other zones' paths) and
+zone balance (smaller zones catch up). Steps that start a zone are also scored on
+joins apart by route and first path length.
+
+## Measures
+
+A finished maze is measured against the goals. For every measure, bigger is better.
+
+- Long way round: share of neighbouring paths whose shortest route between them is long.
+- Solution coverage: share of maze cells a few cells from the solution.
+- Crossings, crossings in a row: counts.
+- Joins apart: crow-flies distance between the two nearest zone joins.
+- Filling: share of cells that are not empty.
+- Finish near start: 1 minus the start-to-finish distance as a share of the grid's diagonal.
+- Zones mixed: how much the least mixed zone is spread among the others.
+- Solution length: cells in the solution.
+- Away from border: share of the solution not next to the edge.
+- Solver effort: how long simulated solvers take, per maze cell.
 
 ## Look
 

@@ -37,21 +37,21 @@ impl Scoring {
 }
 
 pub const STEP_TERMS: [&str; 7] = [
-    "near solution",
-    "short routes",
+    "solution coverage",
+    "long way round",
     "crossings",
     "crossings in a row",
-    "empty cells",
-    "mixing",
-    "zone size",
+    "filling",
+    "zones mixed",
+    "zone balance",
 ];
 
 pub const STEP_PRIORITIES: [f64; 7] = [2.0, 35.0, 1.0, 1.0, 1.0, 9.0, 51.0];
 
 pub const ZONE_START_TERMS: [&str; 4] = [
-    "join route",
-    "circuit cells",
-    "join distance",
+    "joins apart by route",
+    "first path length",
+    "joins apart",
     "finish near start",
 ];
 

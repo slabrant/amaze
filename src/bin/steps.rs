@@ -167,16 +167,16 @@ fn candidate(maze: &Maze, step: &Step, terms: &[f64]) -> String {
 
 fn measures(m: &Measures) -> String {
     format!(
-        r#"{{"short routes":{},"near solution":{},"crossings":{},"crossings in a row":{},"zone joins apart":{},"empty cells":{},"start to finish":{},"solution length":{},"least mixed zone":{}}}"#,
-        m.short_routes_between_neighbours,
-        m.maze_cells_near_solution,
+        r#"{{"long way round":{},"solution coverage":{},"crossings":{},"crossings in a row":{},"joins apart":{},"filling":{},"finish near start":{},"solution length":{},"zones mixed":{}}}"#,
+        m.long_way_round,
+        m.solution_coverage,
         m.crossings,
         m.crossings_in_a_row,
-        m.nearest_zone_joins.unwrap_or(0.0),
-        m.empty_cells,
-        m.start_to_finish,
+        m.joins_apart,
+        m.filling,
+        m.finish_near_start,
         m.solution_length,
-        m.least_mixed_zone
+        m.zones_mixed
     )
 }
 

@@ -498,21 +498,21 @@ mod tests {
             all.iter().map(f).sum::<f64>() / all.len() as f64
         };
         println!(
-            "short {:.2} near {:.2} crossings {:.0} in_a_row {:.0} joins {:.1} empty {:.1} ends {:.1} solution {:.0} least_mixed {:.2} border {:.2} solvers {:.2} {:.2} {:.2} {:.2} each {:?}",
-            average(&|m| m.short_routes_between_neighbours),
-            average(&|m| m.maze_cells_near_solution),
+            "long_way_round {:.2} solution_coverage {:.2} crossings {:.0} crossings_in_a_row {:.0} joins_apart {:.1} filling {:.3} finish_near_start {:.2} solution_length {:.0} zones_mixed {:.2} away_from_border {:.2} solver_effort {:.2} {:.2} {:.2} {:.2} each {:?}",
+            average(&|m| m.long_way_round),
+            average(&|m| m.solution_coverage),
             average(&|m| m.crossings as f64),
             average(&|m| m.crossings_in_a_row as f64),
-            average(&|m| m.nearest_zone_joins.unwrap_or(0.0)),
-            average(&|m| m.empty_cells as f64),
-            average(&|m| m.start_to_finish),
+            average(&|m| m.joins_apart),
+            average(&|m| m.filling),
+            average(&|m| m.finish_near_start),
             average(&|m| m.solution_length as f64),
-            average(&|m| m.least_mixed_zone),
-            average(&|m| m.solution_on_border),
-            average(&|m| m.solver_steps[0]),
-            average(&|m| m.solver_steps[1]),
-            average(&|m| m.solver_steps[2]),
-            average(&|m| m.solver_steps[3]),
+            average(&|m| m.zones_mixed),
+            average(&|m| m.away_from_border),
+            average(&|m| m.solver_effort[0]),
+            average(&|m| m.solver_effort[1]),
+            average(&|m| m.solver_effort[2]),
+            average(&|m| m.solver_effort[3]),
             started.elapsed() / seeds as u32,
         );
     }

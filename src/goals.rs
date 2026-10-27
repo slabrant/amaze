@@ -11,18 +11,17 @@ const SOLVER_PATIENCE: usize = 50;
 
 #[derive(Clone, Debug)]
 pub struct Measures {
-    pub short_routes_between_neighbours: f64,
-    pub maze_cells_near_solution: f64,
+    pub long_way_round: f64,
+    pub solution_coverage: f64,
     pub crossings: usize,
     pub crossings_in_a_row: usize,
-    pub nearest_zone_joins: Option<f64>,
-    pub zones: usize,
-    pub empty_cells: usize,
-    pub start_to_finish: f64,
-    pub least_mixed_zone: f64,
+    pub joins_apart: f64,
+    pub filling: f64,
+    pub finish_near_start: f64,
+    pub zones_mixed: f64,
     pub solution_length: usize,
-    pub solution_on_border: f64,
-    pub solver_steps: Vec<f64>,
+    pub away_from_border: f64,
+    pub solver_effort: Vec<f64>,
 }
 
 pub fn measure(maze: &Maze) -> Measures {
@@ -36,8 +35,8 @@ pub fn measure(maze: &Maze) -> Measures {
     let near = cells_near(maze.grid, solution.iter().map(|&id| maze.piece(id).cell));
     let joins = zone_joins(maze);
     Measures {
-        short_routes_between_neighbours: short_routes_between_neighbours(maze),
-        maze_cells_near_solution: maze_cells
+        long_way_round: 1.0 - short_routes_between_neighbours(maze),
+        solution_coverage: maze_cells
             .iter()
             .filter(|&&cell| near[maze.grid.index(cell)])
             .count() as f64
@@ -47,16 +46,19 @@ pub fn measure(maze: &Maze) -> Measures {
             .filter(|&&cell| maze.content(cell) == Content::Crossing)
             .count(),
         crossings_in_a_row: crossings_in_a_row(maze),
-        nearest_zone_joins: joins
+        joins_apart: joins
             .iter()
             .enumerate()
             .flat_map(|(i, &a)| joins[i + 1..].iter().map(move |&b| a.squared_distance(b)))
             .min()
-            .map(|squared| (squared as f64).sqrt()),
-        zones: maze.zones(),
-        empty_cells: cells.len() - maze_cells.len(),
-        start_to_finish: (maze.start.squared_distance(maze.finish) as f64).sqrt(),
-        least_mixed_zone: {
+            .map_or(0.0, |squared| (squared as f64).sqrt()),
+        filling: maze_cells.len() as f64 / cells.len() as f64,
+        finish_near_start: {
+            let (width, height) = (maze.grid.width as f64, maze.grid.height as f64);
+            let diagonal = (width * width + height * height).sqrt();
+            1.0 - (maze.start.squared_distance(maze.finish) as f64).sqrt() / diagonal
+        },
+        zones_mixed: {
             let counts = zone_counts(maze);
             (0..maze.zones())
                 .map(|zone| {
@@ -78,18 +80,19 @@ pub fn measure(maze: &Maze) -> Measures {
                 .fold(1.0, f64::min)
         },
         solution_length: solution.len(),
-        solution_on_border: solution
-            .iter()
-            .filter(|&&id| {
-                let cell = maze.piece(id).cell;
-                cell.x <= 1
-                    || cell.y <= 1
-                    || cell.x + 2 >= maze.grid.width
-                    || cell.y + 2 >= maze.grid.height
-            })
-            .count() as f64
-            / solution.len().max(1) as f64,
-        solver_steps: Solver::ALL
+        away_from_border: 1.0
+            - solution
+                .iter()
+                .filter(|&&id| {
+                    let cell = maze.piece(id).cell;
+                    cell.x <= 1
+                        || cell.y <= 1
+                        || cell.x + 2 >= maze.grid.width
+                        || cell.y + 2 >= maze.grid.height
+                })
+                .count() as f64
+                / solution.len().max(1) as f64,
+        solver_effort: Solver::ALL
             .iter()
             .map(|&solver| {
                 let mut rng = StdRng::seed_from_u64(0);

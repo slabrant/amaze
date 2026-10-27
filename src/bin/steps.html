@@ -297,7 +297,7 @@ function renderSeeds() {
 function renderAverages() {
   const k = choiceAt();
   if (k < 0) {
-    document.getElementById("at-note").textContent = "The first loop grows by random bumps until it covers 35% of the grid. Nothing is scored, so there is nothing to compare yet.";
+    document.getElementById("at-note").textContent = "The first loop grows two cells at a time, each time where it is least crowded, until it covers 35% of the grid. No goals are scored yet.";
     document.getElementById("at-table").innerHTML = "";
     return;
   }
