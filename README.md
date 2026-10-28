@@ -74,7 +74,7 @@ A finished maze is measured against the goals. For every measure, bigger is bett
 - Paths are white with thin black edges, about three quarters of a cell wide. No walls.
 - The space between paths is plain white, and a black line with rounded corners runs round the outside.
 - Light comes from the top left. Every path casts a soft shadow onto the background.
-- A crossing's top path is a bridge: it is a little wider at the top, narrowing where it comes down, and lightly shaded, fading to white where it meets the ground. The lower path is shaded where it dips under, on both sides, more on the side away from the light.
+- A crossing's top path is a bridge: plain white and straight. The lower path is shaded where it dips under, on both sides, more on the side away from the light.
 - Turns are rounded, inside and outside.
 - At a crossing, the top path is whole and hides the lower path.
 - A crossing where both paths run the same way: undecided (dashed edges, or a narrower top path).
