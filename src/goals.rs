@@ -3,9 +3,9 @@ use crate::maze::{Content, Maze};
 use crate::solvers::{Solver, steps_to_finish};
 use rand::prelude::*;
 
-pub const NEAR: usize = 3;
-pub const LONG_ROUTE: usize = 12;
-pub const MIXING_REACH: usize = 2;
+const NEAR: f64 = 0.13;
+const LONG_ROUTE: f64 = 0.53;
+const MIXING_REACH: f64 = 0.088;
 const LONG_ENOUGH: f64 = 0.2;
 const SOLVER_RUNS: usize = 10;
 const SOLVER_PATIENCE: usize = 50;
@@ -14,8 +14,8 @@ const SOLVER_PATIENCE: usize = 50;
 pub struct Measures {
     pub long_way_round: f64,
     pub solution_coverage: f64,
-    pub crossings: usize,
-    pub crossings_in_a_row: usize,
+    pub crossings: f64,
+    pub crossings_in_a_row: f64,
     pub joins_apart: f64,
     pub filling: f64,
     pub finish_near_start: f64,
@@ -45,14 +45,15 @@ pub fn measure(maze: &Maze) -> Measures {
         crossings: cells
             .iter()
             .filter(|&&cell| maze.content(cell) == Content::Crossing)
-            .count(),
-        crossings_in_a_row: crossings_in_a_row(maze),
+            .count() as f64
+            / cells.len() as f64,
+        crossings_in_a_row: crossings_in_a_row(maze) as f64 / cells.len() as f64,
         joins_apart: joins
             .iter()
             .enumerate()
             .flat_map(|(i, &a)| joins[i + 1..].iter().map(move |&b| a.squared_distance(b)))
             .min()
-            .map_or(0.0, |squared| (squared as f64).sqrt()),
+            .map_or(0.0, |squared| (squared as f64).sqrt() / side(maze.grid)),
         filling: maze_cells.len() as f64 / cells.len() as f64,
         finish_near_start: {
             let (width, height) = (maze.grid.width as f64, maze.grid.height as f64);
@@ -107,15 +108,32 @@ pub fn measure(maze: &Maze) -> Measures {
     }
 }
 
+pub fn side(grid: Grid) -> f64 {
+    ((grid.width * grid.height) as f64).sqrt()
+}
+
+pub fn share_of_side(grid: Grid, share: f64) -> usize {
+    ((share * side(grid)).round() as usize).max(1)
+}
+
+pub fn near(grid: Grid) -> usize {
+    share_of_side(grid, NEAR)
+}
+
+pub fn long_route(grid: Grid) -> usize {
+    share_of_side(grid, LONG_ROUTE)
+}
+
 pub fn long_enough(maze: &Maze) -> usize {
     (LONG_ENOUGH * (maze.grid.width * maze.grid.height) as f64) as usize
 }
 
 pub fn cells_near(grid: Grid, route: impl IntoIterator<Item = Cell>) -> Vec<bool> {
     let mut near = vec![false; grid.width * grid.height];
+    let reach = self::near(grid);
     for on in route {
-        for cell in grid.around(on, NEAR) {
-            if cell.squared_distance(on) <= NEAR * NEAR {
+        for cell in grid.around(on, reach) {
+            if cell.squared_distance(on) <= reach * reach {
                 near[grid.index(cell)] = true;
             }
         }
@@ -127,7 +145,7 @@ pub fn zone_counts(maze: &Maze) -> Vec<Vec<usize>> {
     let grid = maze.grid;
     let mut counts = vec![vec![0; maze.zones()]; grid.width * grid.height];
     for piece in maze.pieces() {
-        for cell in grid.around(piece.cell, MIXING_REACH) {
+        for cell in grid.around(piece.cell, share_of_side(grid, MIXING_REACH)) {
             counts[grid.index(cell)][piece.zone] += 1;
         }
     }
@@ -160,7 +178,7 @@ fn short_routes_between_neighbours(maze: &Maze) -> f64 {
                     continue;
                 }
                 pairs += 1;
-                if distances[other] < LONG_ROUTE {
+                if distances[other] < long_route(maze.grid) {
                     short += 1;
                 }
             }

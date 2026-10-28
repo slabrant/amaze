@@ -57,12 +57,17 @@ the new path, so the next zone has somewhere to start from.
 
 ## Measures
 
-A finished maze is measured against the goals. For every measure, bigger is better.
+A finished maze is measured against the goals. For every measure, bigger is better,
+and every measure is a share or a rate, so mazes of different sizes compare.
+
+Distances the goals use (near the solution, a long way round, how far zones mix,
+how near the finish must be) are shares of the grid's side, the square root of its
+cell count, so difficulty scales with size.
 
 - Long way round: share of neighbouring paths whose shortest route between them is long.
 - Solution coverage: share of maze cells a few cells from the solution.
-- Crossings, crossings in a row: counts.
-- Joins apart: crow-flies distance between the two nearest zone joins.
+- Crossings, crossings in a row: per cell of the grid.
+- Joins apart: crow-flies distance between the two nearest zone joins, as a share of the grid's side.
 - Filling: share of cells that are not empty.
 - Finish near start: 1 minus the start-to-finish distance as a share of the grid's diagonal.
 - Zones mixed: how much the least mixed zone is spread among the others.

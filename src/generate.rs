@@ -1,4 +1,4 @@
-use crate::goals::zone_counts;
+use crate::goals::{share_of_side, side, zone_counts};
 use crate::grid::{Cell, Dir, Grid};
 use crate::maze::{Content, Maze, PieceId, Step, StepCell};
 use crate::score::{
@@ -15,10 +15,10 @@ const ALWAYS_SOME: f64 = 0.2;
 const FIRST_LOOP_SHARE: f64 = 0.35;
 const BUMP_ATTEMPTS: usize = 100_000;
 const BUMP_CHOICES: usize = 30;
-const CROWD_REACH: usize = 2;
+const CROWD_REACH: f64 = 0.088;
 const ZONE_START_CANDIDATES: usize = 200;
 const ZONE_START_REACH: usize = 16;
-const NEAR_ENDS: usize = 8;
+const NEAR_ENDS: f64 = 0.124;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Failed;
@@ -216,10 +216,11 @@ fn place_finish(maze: &mut Maze, zones: usize) -> Result<(), Failed> {
         .map(|finish| finish.squared_distance(maze.start))
         .min()
         .ok_or(Failed)?;
+    let near_ends = (NEAR_ENDS * side(maze.grid)).powi(2).round() as usize;
     let mut longest = 0;
     let mut best = maze.finish;
     for finish in finishes {
-        if finish.squared_distance(maze.start) > nearest.max(NEAR_ENDS) {
+        if finish.squared_distance(maze.start) > nearest.max(near_ends) {
             continue;
         }
         maze.finish = finish;
@@ -263,7 +264,7 @@ fn first_loop(grid: Grid, rng: &mut StdRng, grew: &mut impl FnMut(&[Cell])) -> V
     let wanted = (FIRST_LOOP_SHARE * (grid.width * grid.height) as f64) as usize;
     let crowding = |taken: &HashSet<Cell>, new: [Cell; 2]| {
         new.iter()
-            .flat_map(|&cell| grid.around(cell, CROWD_REACH))
+            .flat_map(|&cell| grid.around(cell, share_of_side(grid, CROWD_REACH)))
             .filter(|cell| taken.contains(cell))
             .count()
     };
@@ -635,11 +636,11 @@ mod tests {
             all.iter().map(f).sum::<f64>() / all.len() as f64
         };
         println!(
-            "long_way_round {:.2} solution_coverage {:.2} crossings {:.0} crossings_in_a_row {:.0} joins_apart {:.1} filling {:.3} finish_near_start {:.2} solution_length {:.2} zones_mixed {:.2} away_from_border {:.2} solver_effort {:.2} {:.2} {:.2} {:.2} each {:?}",
+            "long_way_round {:.2} solution_coverage {:.2} crossings {:.3} crossings_in_a_row {:.3} joins_apart {:.2} filling {:.3} finish_near_start {:.2} solution_length {:.2} zones_mixed {:.2} away_from_border {:.2} solver_effort {:.2} {:.2} {:.2} {:.2} each {:?}",
             average(&|m| m.long_way_round),
             average(&|m| m.solution_coverage),
-            average(&|m| m.crossings as f64),
-            average(&|m| m.crossings_in_a_row as f64),
+            average(&|m| m.crossings),
+            average(&|m| m.crossings_in_a_row),
             average(&|m| m.joins_apart),
             average(&|m| m.filling),
             average(&|m| m.finish_near_start),

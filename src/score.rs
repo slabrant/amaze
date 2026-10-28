@@ -1,4 +1,4 @@
-use crate::goals::{LONG_ROUTE, cells_near, long_enough, zone_counts};
+use crate::goals::{cells_near, long_enough, long_route, zone_counts};
 use crate::grid::Cell;
 use crate::maze::{Content, Maze, PieceId, Routes, Step, StepCell};
 
@@ -201,8 +201,9 @@ fn mixing(maze: &Maze, counts: &[Vec<usize>], step: &Step) -> f64 {
 }
 
 fn short_route_shortfall(maze: &Maze, step: &Step) -> f64 {
-    let from_start = maze.routes_shorter_than(&[step.from], LONG_ROUTE).distances;
-    let from_end = maze.routes_shorter_than(&[step.to], LONG_ROUTE).distances;
+    let long = long_route(maze.grid);
+    let from_start = maze.routes_shorter_than(&[step.from], long).distances;
+    let from_end = maze.routes_shorter_than(&[step.to], long).distances;
     let length = step.cells.len();
     let mut shortfall = 0;
     for (i, c) in step.cells.iter().enumerate() {
@@ -218,11 +219,11 @@ fn short_route_shortfall(maze: &Maze, step: &Step) -> f64 {
                 let route = (i + 1)
                     .saturating_add(from_start[other])
                     .min((length - i).saturating_add(from_end[other]));
-                shortfall += LONG_ROUTE.saturating_sub(route);
+                shortfall += long.saturating_sub(route);
             }
             for (j, later) in step.cells.iter().enumerate().skip(i + 2) {
                 if later.cell == cell {
-                    shortfall += LONG_ROUTE.saturating_sub(j - i);
+                    shortfall += long.saturating_sub(j - i);
                 }
             }
         }
