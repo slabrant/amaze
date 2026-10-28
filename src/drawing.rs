@@ -8,12 +8,9 @@ const LIGHT: Point = (
     std::f64::consts::FRAC_1_SQRT_2,
     std::f64::consts::FRAC_1_SQRT_2,
 );
-const DECK_TILES_ALONG: usize = 24;
-const DECK_TILES_ACROSS: usize = 12;
-const DECK_SHADE: f64 = 0.3;
-const DECK_SUN_SIDE: f64 = 0.6;
-const DECK_FADE: f64 = 0.25;
 const TILE_OVERLAP: f64 = 0.003;
+const BULGE: f64 = 0.02;
+const BULGE_STEPS: usize = 16;
 const SHADOW_DEPTH: f64 = 0.3;
 const SHADOW_BANDS: usize = 12;
 const SUN_SIDE_SHADOW: f64 = 0.6;
@@ -155,9 +152,21 @@ pub fn draw(maze: &Maze) -> Vec<Mark> {
             ids.iter()
                 .any(|&id| maze.piece(id).has_side(a) && maze.piece(id).has_side(b))
         };
+        let raised = |dir: Dir| {
+            let [_, top] = ids else {
+                return false;
+            };
+            maze.piece(*top).links.iter().any(|&(side, next)| {
+                let there = maze.pieces_in(maze.piece(next).cell);
+                side == dir && there.len() == 2 && there[1] == next
+            })
+        };
         for (i, dir) in Dir::ALL.into_iter().enumerate() {
             if joined[i] {
                 fills.push(overlapping(arm(cell, dir), dir));
+                if raised(dir) {
+                    continue;
+                }
                 edges.extend(arm_edges(
                     cell,
                     dir,
@@ -190,8 +199,11 @@ pub fn draw(maze: &Maze) -> Vec<Mark> {
                         && maze.pieces_in(maze.piece(next).cell).len() == 2
                 })
             };
-            shading.extend(bridge(cell, along, [!flat(along), !flat(along.opposite())]));
-            edges.extend(across(cell, maze.piece(*top).has_side(Dir::North)));
+            let ramps = [!flat(along), !flat(along.opposite())];
+            let (widening, dip) = bridge(cell, along, ramps);
+            fills.extend(widening);
+            shading.extend(dip);
+            edges.extend(bulged(cell, along, ramps));
         }
     }
     let mut marks = background_shadow(&fills);
@@ -221,74 +233,85 @@ fn facing(dir: Dir) -> f64 {
     dx * LIGHT.0 + dy * LIGHT.1
 }
 
-fn bridge(cell: Cell, along: Dir, ramps: [bool; 2]) -> Vec<Mark> {
+fn bridge(cell: Cell, along: Dir, ramps: [bool; 2]) -> (Vec<Vec<Point>>, Vec<Mark>) {
     let (x, y) = centre(cell);
     let across = along.turned_right();
     let place = |a: f64, b: f64| {
         let ((ux, uy), (wx, wy)) = (offset(along), offset(across));
         (x + ux * a + wx * b, y + uy * a + wy * b)
     };
-    let rectangle = |(a0, a1): (f64, f64), (b0, b1): (f64, f64)| {
-        vec![place(a0, b0), place(a1, b0), place(a1, b1), place(a0, b1)]
+    let edge = |from: f64, to: f64, b: &dyn Fn(f64) -> f64| -> Vec<Point> {
+        (0..=BULGE_STEPS)
+            .map(|i| {
+                let a = from + (to - from) * i as f64 / BULGE_STEPS as f64;
+                place(a, b(a))
+            })
+            .collect()
     };
-    let (light_along, light_across) = (facing(along), facing(across));
-    let down = |a: f64| {
-        let ramp = if a >= 0.0 { ramps[0] } else { ramps[1] };
-        if ramp && a * light_along > 0.0 {
-            if a.abs() <= 0.5 {
-                2.0 * a.abs()
-            } else {
-                (1.0 - (a.abs() - 0.5) / DECK_FADE).max(0.0)
-            }
-        } else {
-            0.0
-        }
-    };
-    let away = |b: f64| 1.0 - DECK_SUN_SIDE * (0.5 - b * light_across.signum() / CORRIDOR);
-    let step = |n: usize| 1.0 / n as f64;
-    let mut marks = Vec::new();
-    let reach = 0.5 + DECK_FADE;
-    let tiles = (2.0 * reach * DECK_TILES_ALONG as f64).round() as usize;
-    for i in 0..tiles {
-        for j in 0..DECK_TILES_ACROSS {
-            let (a0, a1) = (
-                i as f64 * step(DECK_TILES_ALONG) - reach,
-                (i + 1) as f64 * step(DECK_TILES_ALONG) - reach,
-            );
-            let (b0, b1) = (
-                (j as f64 * step(DECK_TILES_ACROSS) - 0.5) * CORRIDOR,
-                ((j + 1) as f64 * step(DECK_TILES_ACROSS) - 0.5) * CORRIDOR,
-            );
-            let darkness = DECK_SHADE * down((a0 + a1) / 2.0) * away((b0 + b1) / 2.0);
-            if darkness < 0.005 {
-                continue;
-            }
-            marks.push(Mark::Polygon {
-                points: rectangle(
-                    (a0 - TILE_OVERLAP, a1 + TILE_OVERLAP),
-                    (b0 - TILE_OVERLAP, b1 + TILE_OVERLAP),
-                ),
-                colour: Colour::grey(1.0 - darkness),
-            });
-        }
-    }
+    let light_across = facing(across);
+    let (start, end) = bulge_span(ramps);
+    let mut widening = Vec::new();
+    let mut shading = Vec::new();
     for sign in [1.0, -1.0] {
+        let mut points = edge(start, end, &|a| sign * (HALF + bulge(a, ramps)));
+        points.push(place(end, sign * (HALF - OVERLAP)));
+        points.push(place(start, sign * (HALF - OVERLAP)));
+        widening.push(points);
         let darkness = if sign * light_across >= 0.0 {
             1.0 - SHADOW
         } else {
             (1.0 - SHADOW) * SUN_SIDE_SHADOW
         };
         for band in 0..SHADOW_BANDS {
-            let from = HALF + SHADOW_DEPTH * band as f64 / SHADOW_BANDS as f64;
-            let to = HALF + SHADOW_DEPTH * (band + 1) as f64 / SHADOW_BANDS as f64;
+            let from = SHADOW_DEPTH * band as f64 / SHADOW_BANDS as f64;
+            let to = SHADOW_DEPTH * (band + 1) as f64 / SHADOW_BANDS as f64 + TILE_OVERLAP;
             let fade = band as f64 / SHADOW_BANDS as f64;
-            marks.push(Mark::Polygon {
-                points: rectangle((-HALF, HALF), (sign * from, sign * (to + TILE_OVERLAP))),
+            let mut points = edge(-HALF, HALF, &|a| sign * (HALF + bulge(a, ramps) + from));
+            points.extend(edge(HALF, -HALF, &|a| sign * (HALF + bulge(a, ramps) + to)));
+            shading.push(Mark::Polygon {
+                points,
                 colour: Colour::grey(1.0 - darkness * (1.0 - fade)),
             });
         }
     }
-    marks
+    (widening, shading)
+}
+
+fn bulge(a: f64, ramps: [bool; 2]) -> f64 {
+    let ramp = if a >= 0.0 { ramps[0] } else { ramps[1] };
+    if ramp {
+        BULGE
+            * (std::f64::consts::FRAC_PI_2 * (a / HALF).clamp(-1.0, 1.0))
+                .cos()
+                .powi(2)
+    } else {
+        BULGE
+    }
+}
+
+fn bulge_span(ramps: [bool; 2]) -> (f64, f64) {
+    (
+        if ramps[1] { -HALF } else { -0.5 },
+        if ramps[0] { HALF } else { 0.5 },
+    )
+}
+
+fn bulged(cell: Cell, along: Dir, ramps: [bool; 2]) -> Vec<Vec<Point>> {
+    let (x, y) = centre(cell);
+    let ((ux, uy), (wx, wy)) = (offset(along), offset(along.turned_right()));
+    let (start, end) = bulge_span(ramps);
+    [1.0, -1.0]
+        .into_iter()
+        .map(|sign| {
+            (0..=BULGE_STEPS)
+                .map(|i| {
+                    let a = start + (end - start) * i as f64 / BULGE_STEPS as f64;
+                    let b = sign * (HALF + bulge(a, ramps));
+                    (x + ux * a + wx * b, y + uy * a + wy * b)
+                })
+                .collect()
+        })
+        .collect()
 }
 
 fn corner(cell: Cell, a: Dir, b: Dir) -> Point {
@@ -385,20 +408,6 @@ fn fillet(cell: Cell, a: Dir, b: Dir) -> Vec<Point> {
                 ox - (bx * angle.cos() + ax * angle.sin()) * INNER_ROUNDING,
                 oy - (by * angle.cos() + ay * angle.sin()) * INNER_ROUNDING,
             )
-        })
-        .collect()
-}
-
-fn across(cell: Cell, north_south: bool) -> Vec<Vec<Point>> {
-    let (x, y) = centre(cell);
-    [-HALF, HALF]
-        .into_iter()
-        .map(|side| {
-            if north_south {
-                vec![(x + side, y - HALF), (x + side, y + HALF)]
-            } else {
-                vec![(x - HALF, y + side), (x + HALF, y + side)]
-            }
         })
         .collect()
 }
