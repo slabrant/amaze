@@ -1,4 +1,4 @@
-use crate::goals::{LONG_ROUTE, cells_near, zone_counts};
+use crate::goals::{LONG_ROUTE, cells_near, long_enough, zone_counts};
 use crate::grid::Cell;
 use crate::maze::{Content, Maze, PieceId, Routes, Step, StepCell};
 
@@ -36,17 +36,18 @@ impl Scoring {
     }
 }
 
-pub const STEP_TERMS: [&str; 7] = [
+pub const STEP_TERMS: [&str; 8] = [
     "solution coverage",
     "long way round",
     "crossings",
     "crossings in a row",
     "filling",
     "zones mixed",
+    "solution length",
     "zone balance",
 ];
 
-pub const STEP_PRIORITIES: [f64; 7] = [2.0, 35.0, 1.0, 1.0, 1.0, 9.0, 51.0];
+pub const STEP_PRIORITIES: [f64; 8] = [25.0, 30.0, 10.0, 5.0, 5.0, 12.0, 25.0, 20.0];
 
 pub const ZONE_START_TERMS: [&str; 3] = ["joins apart", "first path length", "finish near start"];
 
@@ -100,7 +101,7 @@ impl Solution {
         }
     }
 
-    fn near_fraction_after(&self, maze: &Maze, step: &Step) -> f64 {
+    fn after(&self, maze: &Maze, step: &Step) -> (f64, usize) {
         let through = |into: PieceId, out_of: PieceId| {
             self.from_start.distances[into]
                 .saturating_add(step.cells.len() + 2)
@@ -109,7 +110,7 @@ impl Solution {
         let forwards = through(step.from, step.to);
         let backwards = through(step.to, step.from);
         if forwards.min(backwards) >= self.length {
-            return self.near_fraction;
+            return (self.near_fraction, self.length);
         }
         let (into, out_of, cells): (PieceId, PieceId, Vec<Cell>) = if forwards <= backwards {
             (
@@ -133,7 +134,10 @@ impl Solution {
             .map(|id| maze.piece(id).cell)
             .chain(cells)
             .chain(finishing.into_iter().map(|id| maze.piece(id).cell));
-        near_fraction(cells_near(maze.grid, route))
+        (
+            near_fraction(cells_near(maze.grid, route)),
+            forwards.min(backwards),
+        )
     }
 }
 
@@ -142,7 +146,8 @@ fn near_fraction(near: Vec<bool>) -> f64 {
 }
 
 fn step_terms(maze: &Maze, solution: &Solution, counts: &[Vec<usize>], step: &Step) -> Vec<f64> {
-    let near_fraction = solution.near_fraction_after(maze, step);
+    let (near_fraction, length) = solution.after(maze, step);
+    let long_enough = long_enough(maze);
     let is_crossing = |c: &StepCell| maze.content(c.cell) == Content::Path;
     let crossings = step.cells.iter().filter(|c| is_crossing(c)).count();
     let crossings_in_a_row = step
@@ -162,6 +167,7 @@ fn step_terms(maze: &Maze, solution: &Solution, counts: &[Vec<usize>], step: &St
         crossings_in_a_row as f64,
         empty_cells as f64,
         mixing(maze, counts, step),
+        -(long_enough.saturating_sub(length) as f64),
     ]
 }
 

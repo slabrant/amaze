@@ -50,6 +50,7 @@ filled. If a zone cannot be started, generation fails.
 7. Finish near start: start and finish are near each other, as the crow flies.
 8. Zones mixed: each zone is spread among the other zones' paths.
 9. Zone balance: zones are about the same size.
+10. Solution length: the solution is long enough (a fifth of the grid's cells), but no longer is better; long solutions are tiresome.
 
 Steps that start a zone are also scored on first path length, so the next zone
 has room to start from it.
@@ -65,7 +66,7 @@ A finished maze is measured against the goals. For every measure, bigger is bett
 - Filling: share of cells that are not empty.
 - Finish near start: 1 minus the start-to-finish distance as a share of the grid's diagonal.
 - Zones mixed: how much the least mixed zone is spread among the others.
-- Solution length: cells in the solution.
+- Solution length: the solution's cells as a share of long enough, at most 1.
 - Away from border: share of the solution not next to the edge.
 - Solver effort: how long simulated solvers take, per maze cell.
 

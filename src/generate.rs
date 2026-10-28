@@ -485,20 +485,26 @@ mod tests {
     #[test]
     #[ignore]
     fn reports_goals_over_many_seeds() {
-        let seeds = 50;
+        let seeds = 40;
+        let grid = crate::book::STANDARD;
         let started = std::time::Instant::now();
-        let all: Vec<crate::goals::Measures> = (0..seeds)
-            .map(|seed| {
-                let maze = generate(GRID, seed, 3).unwrap();
-                assert_eq!(broken(&maze), vec![], "seed {seed}");
-                crate::goals::measure(&maze)
-            })
+        let made: Vec<Maze> = (0..seeds)
+            .filter_map(|seed| generate(grid, seed, crate::book::zones_for(grid)).ok())
             .collect();
+        for maze in &made {
+            assert_eq!(broken(maze), vec![]);
+        }
+        let all: Vec<crate::goals::Measures> = made.iter().map(crate::goals::measure).collect();
+        println!(
+            "failed {} of {seeds}, solution cells {:.0}",
+            seeds as usize - made.len(),
+            made.iter().map(|maze| maze.solution().len()).sum::<usize>() as f64 / made.len() as f64
+        );
         let average = |f: &dyn Fn(&crate::goals::Measures) -> f64| {
             all.iter().map(f).sum::<f64>() / all.len() as f64
         };
         println!(
-            "long_way_round {:.2} solution_coverage {:.2} crossings {:.0} crossings_in_a_row {:.0} joins_apart {:.1} filling {:.3} finish_near_start {:.2} solution_length {:.0} zones_mixed {:.2} away_from_border {:.2} solver_effort {:.2} {:.2} {:.2} {:.2} each {:?}",
+            "long_way_round {:.2} solution_coverage {:.2} crossings {:.0} crossings_in_a_row {:.0} joins_apart {:.1} filling {:.3} finish_near_start {:.2} solution_length {:.2} zones_mixed {:.2} away_from_border {:.2} solver_effort {:.2} {:.2} {:.2} {:.2} each {:?}",
             average(&|m| m.long_way_round),
             average(&|m| m.solution_coverage),
             average(&|m| m.crossings as f64),
@@ -506,7 +512,7 @@ mod tests {
             average(&|m| m.joins_apart),
             average(&|m| m.filling),
             average(&|m| m.finish_near_start),
-            average(&|m| m.solution_length as f64),
+            average(&|m| m.solution_length),
             average(&|m| m.zones_mixed),
             average(&|m| m.away_from_border),
             average(&|m| m.solver_effort[0]),

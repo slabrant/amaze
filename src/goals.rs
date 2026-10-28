@@ -6,6 +6,7 @@ use rand::prelude::*;
 pub const NEAR: usize = 3;
 pub const LONG_ROUTE: usize = 12;
 pub const MIXING_REACH: usize = 2;
+const LONG_ENOUGH: f64 = 0.2;
 const SOLVER_RUNS: usize = 10;
 const SOLVER_PATIENCE: usize = 50;
 
@@ -19,7 +20,7 @@ pub struct Measures {
     pub filling: f64,
     pub finish_near_start: f64,
     pub zones_mixed: f64,
-    pub solution_length: usize,
+    pub solution_length: f64,
     pub away_from_border: f64,
     pub solver_effort: Vec<f64>,
 }
@@ -79,7 +80,7 @@ pub fn measure(maze: &Maze) -> Measures {
                 })
                 .fold(1.0, f64::min)
         },
-        solution_length: solution.len(),
+        solution_length: (solution.len() as f64 / long_enough(maze) as f64).min(1.0),
         away_from_border: 1.0
             - solution
                 .iter()
@@ -104,6 +105,10 @@ pub fn measure(maze: &Maze) -> Measures {
             })
             .collect(),
     }
+}
+
+pub fn long_enough(maze: &Maze) -> usize {
+    (LONG_ENOUGH * (maze.grid.width * maze.grid.height) as f64) as usize
 }
 
 pub fn cells_near(grid: Grid, route: impl IntoIterator<Item = Cell>) -> Vec<bool> {
