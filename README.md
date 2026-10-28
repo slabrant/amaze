@@ -52,8 +52,8 @@ filled. If a zone cannot be started, generation fails.
 9. Zone balance: zones are about the same size.
 10. Solution length: the solution is long enough (a fifth of the grid's cells), but no longer is better; long solutions are tiresome.
 
-Steps that start a zone are also scored on first path length, so the next zone
-has room to start from it.
+Steps that start a zone are also scored on next zone room: empty cells beside
+the new path, so the next zone has somewhere to start from.
 
 ## Measures
 
@@ -95,7 +95,7 @@ A finished maze is measured against the goals. For every measure, bigger is bett
 
 Places where generation treats something differently from the rest.
 
-- A step that starts a zone is picked from more tries than other steps, and its search always runs the full length.
+- A step that starts a zone is picked from more tries than other steps. It is found by walking out a short way from a path of the previous zone, then taking the shortest way back to the other side of the cell it left.
 - The step that starts the last zone is pulled towards the start, so the finish can be near it.
 - The finish is any cell of the last zone nearly as near the start as the nearest one; of those, the one with the longest solution.
 - Start and finish cells are never made into crossings.

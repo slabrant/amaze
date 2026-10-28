@@ -17,6 +17,7 @@ const BUMP_ATTEMPTS: usize = 100_000;
 const BUMP_CHOICES: usize = 30;
 const CROWD_REACH: usize = 2;
 const ZONE_START_CANDIDATES: usize = 200;
+const ZONE_START_REACH: usize = 16;
 const NEAR_ENDS: usize = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -163,7 +164,13 @@ fn candidates<'a>(
     let sides = open_sides(maze, zone);
     let mut found = HashSet::new();
     (0..attempts)
-        .filter_map(move |_| find_step(maze, rng, counts, zone, &sides))
+        .filter_map(move |_| {
+            if zone == maze.zones() {
+                find_zone_start(maze, rng, counts, zone, &sides)
+            } else {
+                find_step(maze, rng, counts, zone, &sides)
+            }
+        })
         .filter(move |step| found.insert(path_of(maze, step)))
         .take(wanted)
 }
@@ -362,11 +369,7 @@ fn find_step(
         on_top: rng.random_bool(0.5),
     }];
     let mut heading = out;
-    let limit = if zone == maze.zones() {
-        grid.width * grid.height
-    } else {
-        rng.random_range(1..=grid.width * grid.height)
-    };
+    let limit = rng.random_range(1..=grid.width * grid.height);
     let mut ends: Vec<(usize, PieceId)> = Vec::new();
     loop {
         let here = cells[cells.len() - 1].cell;
@@ -414,6 +417,134 @@ fn find_step(
         };
         maze.check_step(&step).is_ok().then_some(step)
     })
+}
+
+fn find_zone_start(
+    maze: &Maze,
+    rng: &mut StdRng,
+    counts: &[Vec<usize>],
+    zone: usize,
+    sides: &[(PieceId, Dir)],
+) -> Option<Step> {
+    let grid = maze.grid;
+    let &(from, out) = sides
+        .choose_weighted(rng, |&(id, _)| {
+            ALWAYS_SOME + foreign_share(counts, grid.index(maze.piece(id).cell), zone)
+        })
+        .ok()?;
+    let from_cell = maze.piece(from).cell;
+    let back = *sides
+        .iter()
+        .filter(|&&(id, dir)| id == from && dir != out)
+        .map(|&(_, dir)| dir)
+        .collect::<Vec<_>>()
+        .choose(rng)?;
+    let target = grid.neighbour(from_cell, back)?;
+    let first = grid
+        .neighbour(from_cell, out)
+        .filter(|&cell| can_enter(maze, cell))?;
+    let mut visited = vec![false; grid.width * grid.height];
+    visited[grid.index(from_cell)] = true;
+    visited[grid.index(first)] = true;
+    let mut cells = vec![first];
+    let mut heading = out;
+    let outward = rng.random_range(1..=grid.width * grid.height / ZONE_START_REACH);
+    while cells.len() < outward {
+        let here = cells[cells.len() - 1];
+        let onward: Vec<(Dir, Cell)> = ways_on(maze, here, &heading)
+            .iter()
+            .filter_map(|&dir| Some((dir, grid.neighbour(here, dir)?)))
+            .filter(|&(dir, cell)| {
+                !visited[grid.index(cell)] && cell != target && enters_straight(maze, cell, dir)
+            })
+            .collect();
+        let Ok(&(dir, next)) = onward.choose_weighted(rng, |&(_, cell)| {
+            ALWAYS_SOME + foreign_share(counts, grid.index(cell), zone)
+        }) else {
+            break;
+        };
+        heading = dir;
+        visited[grid.index(next)] = true;
+        cells.push(next);
+    }
+    cells.extend(way_back(
+        maze,
+        &visited,
+        cells[cells.len() - 1],
+        heading,
+        target,
+        back,
+    )?);
+    let step = Step {
+        from,
+        cells: cells
+            .into_iter()
+            .map(|cell| StepCell {
+                cell,
+                on_top: rng.random_bool(0.5),
+            })
+            .collect(),
+        to: from,
+        zone,
+    };
+    maze.check_step(&step).is_ok().then_some(step)
+}
+
+fn enters_straight(maze: &Maze, cell: Cell, dir: Dir) -> bool {
+    can_enter(maze, cell)
+        && match maze.pieces_in(cell) {
+            [crossed] => !maze.piece(*crossed).has_side(dir),
+            _ => true,
+        }
+}
+
+fn way_back(
+    maze: &Maze,
+    visited: &[bool],
+    tip: Cell,
+    heading: Dir,
+    target: Cell,
+    back: Dir,
+) -> Option<Vec<Cell>> {
+    let grid = maze.grid;
+    let state = |cell: Cell, dir: Dir| grid.index(cell) * 4 + dir as usize;
+    let arrived = |cell: Cell, dir: Dir| {
+        cell == target && ways_on(maze, cell, &dir).contains(&back.opposite())
+    };
+    if arrived(tip, heading) {
+        return Some(Vec::new());
+    }
+    let mut came_from: Vec<Option<(Cell, Dir)>> = vec![None; grid.width * grid.height * 4];
+    let mut queue = std::collections::VecDeque::from([(tip, heading)]);
+    let mut seen = vec![false; grid.width * grid.height * 4];
+    seen[state(tip, heading)] = true;
+    while let Some((here, facing)) = queue.pop_front() {
+        for &dir in ways_on(maze, here, &facing) {
+            let Some(next) = grid.neighbour(here, dir) else {
+                continue;
+            };
+            if visited[grid.index(next)]
+                || seen[state(next, dir)]
+                || !enters_straight(maze, next, dir)
+            {
+                continue;
+            }
+            seen[state(next, dir)] = true;
+            came_from[state(next, dir)] = Some((here, facing));
+            if arrived(next, dir) {
+                let mut route = vec![next];
+                let mut at = (here, facing);
+                while at != (tip, heading) {
+                    route.push(at.0);
+                    at = came_from[state(at.0, at.1)]?;
+                }
+                route.reverse();
+                return Some(route);
+            }
+            queue.push_back((next, dir));
+        }
+    }
+    None
 }
 
 #[cfg(test)]

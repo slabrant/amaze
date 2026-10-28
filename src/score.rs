@@ -49,9 +49,9 @@ pub const STEP_TERMS: [&str; 8] = [
 
 pub const STEP_PRIORITIES: [f64; 8] = [25.0, 30.0, 10.0, 5.0, 5.0, 12.0, 25.0, 20.0];
 
-pub const ZONE_START_TERMS: [&str; 3] = ["joins apart", "first path length", "finish near start"];
+pub const ZONE_START_TERMS: [&str; 3] = ["joins apart", "next zone room", "finish near start"];
 
-pub const ZONE_START_PRIORITIES: [f64; 3] = [39.0, 38.0, 95.0];
+pub const ZONE_START_PRIORITIES: [f64; 3] = [39.0, 15.0, 95.0];
 
 pub fn zone_start_terms(maze: &Maze, entry: PieceId, step: &Step, last: bool) -> Vec<f64> {
     let route = maze.routes_from(&[entry]).distances[step.from];
@@ -70,11 +70,22 @@ pub fn zone_start_terms(maze: &Maze, entry: PieceId, step: &Step, last: bool) ->
     } else {
         0.0
     };
+    let room = if last { 0 } else { next_zone_room(maze, step) };
     vec![
         (route as f64 + (crow as f64).sqrt()) / 2.0,
-        step.cells.len() as f64,
+        room as f64,
         -finish_away,
     ]
+}
+
+fn next_zone_room(maze: &Maze, step: &Step) -> usize {
+    let taken: std::collections::HashSet<Cell> = step.cells.iter().map(|c| c.cell).collect();
+    step.cells
+        .iter()
+        .filter(|c| maze.content(c.cell) == Content::Empty)
+        .flat_map(|c| maze.grid.neighbours(c.cell))
+        .filter(|&(_, cell)| maze.content(cell) == Content::Empty && !taken.contains(&cell))
+        .count()
 }
 
 struct Solution {
