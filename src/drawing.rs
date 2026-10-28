@@ -10,6 +10,8 @@ const LIGHT: Point = (
 );
 const TILE_OVERLAP: f64 = 0.003;
 const BULGE: f64 = 0.02;
+const DECK_BANDS: usize = 16;
+const DECK_TINT: f64 = 0.07;
 const BULGE_STEPS: usize = 16;
 const SHADOW_DEPTH: f64 = 0.3;
 const SHADOW_BANDS: usize = 12;
@@ -252,6 +254,29 @@ fn bridge(cell: Cell, along: Dir, ramps: [bool; 2]) -> (Vec<Vec<Point>>, Vec<Mar
     let (start, end) = bulge_span(ramps);
     let mut widening = Vec::new();
     let mut shading = Vec::new();
+    let height = |a: f64| {
+        let ramp = if a >= 0.0 { ramps[0] } else { ramps[1] };
+        if ramp {
+            (std::f64::consts::PI * a).cos().powi(2)
+        } else {
+            1.0
+        }
+    };
+    for band in 0..DECK_BANDS {
+        let from = band as f64 / DECK_BANDS as f64 - 0.5;
+        let to = (band + 1) as f64 / DECK_BANDS as f64 - 0.5;
+        let tint = DECK_TINT * height((from + to) / 2.0);
+        if tint < 0.002 {
+            continue;
+        }
+        let (from, to) = (from - TILE_OVERLAP, to + TILE_OVERLAP);
+        let mut points = edge(from, to, &|a| HALF + bulge(a, ramps));
+        points.extend(edge(to, from, &|a| -(HALF + bulge(a, ramps))));
+        shading.push(Mark::Polygon {
+            points,
+            colour: Colour::grey(1.0 - tint),
+        });
+    }
     for sign in [1.0, -1.0] {
         let mut points = edge(start, end, &|a| sign * (HALF + bulge(a, ramps)));
         points.push(place(end, sign * (HALF - OVERLAP)));
