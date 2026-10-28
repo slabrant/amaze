@@ -46,6 +46,23 @@ pub const MINI_HARD: Grid = Grid {
     height: 16,
 };
 
+pub const HALF_TRIVIAL: Grid = Grid {
+    width: 15,
+    height: 10,
+};
+pub const HALF_EASY: Grid = Grid {
+    width: 19,
+    height: 12,
+};
+pub const HALF_STANDARD: Grid = Grid {
+    width: 23,
+    height: 14,
+};
+pub const HALF_HARD: Grid = Grid {
+    width: 27,
+    height: 17,
+};
+
 pub struct Contents {
     pub per_level: usize,
     pub minis_per_level: usize,
@@ -77,6 +94,18 @@ pub fn book(seed: u64, contents: &Contents) -> Vec<Vec<Mark>> {
         pages.extend(sheet(page, &quarter_pages()));
     }
     pages
+}
+
+pub fn two_up_book(seed: u64, per_level: usize) -> Vec<Vec<Mark>> {
+    let jobs: Vec<(Grid, u64)> = [HALF_TRIVIAL, HALF_EASY, HALF_STANDARD, HALF_HARD]
+        .into_iter()
+        .flat_map(|grid| std::iter::repeat_n(grid, per_level))
+        .zip(seed..)
+        .collect();
+    mazes(&jobs)
+        .chunks(2)
+        .flat_map(|page| sheet(page, &half_pages()))
+        .collect()
 }
 
 fn mazes(jobs: &[(Grid, u64)]) -> Vec<Maze> {
@@ -151,6 +180,18 @@ fn whole_page() -> Slot {
     }
 }
 
+fn half_pages() -> [Slot; 2] {
+    let page = whole_page();
+    let height = (page.height - MINI_GAP) / 2.0;
+    let slot = |row: f64| Slot {
+        left: page.left,
+        top: page.top + row * (height + MINI_GAP),
+        width: page.width,
+        height,
+    };
+    [slot(0.0), slot(1.0)]
+}
+
 fn quarter_pages() -> [Slot; 4] {
     let page = whole_page();
     let width = (page.width - MINI_GAP) / 2.0;
@@ -172,6 +213,11 @@ fn quarter_pages() -> [Slot; 4] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn two_up_book_has_a_back_for_every_page_of_two() {
+        assert_eq!(two_up_book(0, 2).len(), 8);
+    }
 
     #[test]
     fn bigger_levels_have_more_zones() {
