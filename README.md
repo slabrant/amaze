@@ -88,7 +88,7 @@ A finished maze is measured against the goals. For every measure, bigger is bett
 - A book: Trivial, Easy, Standard and Hard one to a page, then mini Trivial, Easy, Standard and Hard four to a page.
 - Each solution is printed mirrored on the back of its page.
 - With no seed given, a random one is used and printed.
-- With `--two-up`, a book of two mazes to a page instead: four wide sizes, four mazes each, easiest first.
+- With `--two-up`, a book of two mazes to a page instead: four wide sizes, two mazes each, easiest first.
 - The back shows only the solution: a thick line whose colour runs from red at the start to purple at the finish, with a gap where it goes under another path. Being mirrored, it lines up when the page is held to the light.
 
 ## Exceptions

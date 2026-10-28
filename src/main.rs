@@ -4,7 +4,7 @@ use std::process::ExitCode;
 
 const PER_LEVEL: usize = 2;
 const MINIS_PER_LEVEL: usize = 3;
-const TWO_UP_PER_LEVEL: usize = 4;
+const TWO_UP_PER_LEVEL: usize = 2;
 
 fn main() -> ExitCode {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
