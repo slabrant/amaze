@@ -94,10 +94,10 @@ cell count, so difficulty scales with size. Near the solution is never less than
 
 ## Output
 
-- A book: Trivial, Easy, Standard and Hard one to a page, then mini Trivial, Easy, Standard and Hard four to a page.
+- A book: Trivial, Easy, Standard and Hard, two mazes of each, easiest first, one to a page.
 - Each solution is printed mirrored on the back of its page.
 - With no seed given, a random one is used and printed.
-- With `--two-up`, a book of two mazes to a page instead: four wide sizes, two mazes each, easiest first.
+- With `--two-up`, the same book two to a page, using four wide sizes.
 - With `--black`, everything prints in black ink only: start and finish are black, and the solution is an even halftone line with no outline.
 - Grey and black are written as black ink only, so the printer does not mix them from colour inks.
 - The back shows only the solution: a thick line whose colour runs from red at the start to purple at the finish, with a gap where it goes under another path. Being mirrored, it lines up when the page is held to the light.

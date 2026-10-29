@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 const MILLIMETRE: f64 = 72.0 / 25.4;
 const MARGIN: f64 = 15.0 * MILLIMETRE;
-const MINI_GAP: f64 = 10.0 * MILLIMETRE;
+const GAP: f64 = 10.0 * MILLIMETRE;
 const SIDE_PER_ZONE: f64 = 4.5;
 const RETRIES: u64 = 20;
 
@@ -29,22 +29,6 @@ pub const HARD: Grid = Grid {
     width: 24,
     height: 31,
 };
-pub const MINI_TRIVIAL: Grid = Grid {
-    width: 8,
-    height: 10,
-};
-pub const MINI_EASY: Grid = Grid {
-    width: 10,
-    height: 13,
-};
-pub const MINI_STANDARD: Grid = Grid {
-    width: 12,
-    height: 15,
-};
-pub const MINI_HARD: Grid = Grid {
-    width: 13,
-    height: 16,
-};
 
 pub const HALF_TRIVIAL: Grid = Grid {
     width: 15,
@@ -63,11 +47,29 @@ pub const HALF_HARD: Grid = Grid {
     height: 17,
 };
 
-pub struct Contents {
-    pub per_level: usize,
-    pub minis_per_level: usize,
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Layout {
+    OneUp,
+    TwoUp,
 }
 
+impl Layout {
+    fn levels(self) -> [Grid; 4] {
+        match self {
+            Layout::OneUp => [TRIVIAL, EASY, STANDARD, HARD],
+            Layout::TwoUp => [HALF_TRIVIAL, HALF_EASY, HALF_STANDARD, HALF_HARD],
+        }
+    }
+
+    fn slots(self) -> Vec<Slot> {
+        match self {
+            Layout::OneUp => vec![whole_page()],
+            Layout::TwoUp => half_pages().to_vec(),
+        }
+    }
+}
+
+#[derive(Clone)]
 struct Slot {
     left: f64,
     top: f64,
@@ -75,36 +77,17 @@ struct Slot {
     height: f64,
 }
 
-pub fn book(seed: u64, contents: &Contents, ink: Ink) -> Vec<Vec<Mark>> {
-    let full_size = [TRIVIAL, EASY, STANDARD, HARD]
-        .into_iter()
-        .flat_map(|grid| std::iter::repeat_n(grid, contents.per_level));
-    let mini = [MINI_TRIVIAL, MINI_EASY, MINI_STANDARD, MINI_HARD]
-        .into_iter()
-        .flat_map(|grid| std::iter::repeat_n(grid, contents.minis_per_level));
-    let full_size_count = 4 * contents.per_level;
-    let jobs: Vec<(Grid, u64)> = full_size.chain(mini).zip(seed..).collect();
-    let mazes = mazes(&jobs);
-    let (full_size, mini) = mazes.split_at(full_size_count);
-    let mut pages = Vec::new();
-    for maze in full_size {
-        pages.extend(sheet(std::slice::from_ref(maze), &[whole_page()], ink));
-    }
-    for page in mini.chunks(4) {
-        pages.extend(sheet(page, &quarter_pages(), ink));
-    }
-    pages
-}
-
-pub fn two_up_book(seed: u64, per_level: usize, ink: Ink) -> Vec<Vec<Mark>> {
-    let jobs: Vec<(Grid, u64)> = [HALF_TRIVIAL, HALF_EASY, HALF_STANDARD, HALF_HARD]
+pub fn book(seed: u64, layout: Layout, per_level: usize, ink: Ink) -> Vec<Vec<Mark>> {
+    let jobs: Vec<(Grid, u64)> = layout
+        .levels()
         .into_iter()
         .flat_map(|grid| std::iter::repeat_n(grid, per_level))
         .zip(seed..)
         .collect();
+    let slots = layout.slots();
     mazes(&jobs)
-        .chunks(2)
-        .flat_map(|page| sheet(page, &half_pages(), ink))
+        .chunks(slots.len())
+        .flat_map(|page| sheet(page, &slots, ink))
         .collect()
 }
 
@@ -182,32 +165,14 @@ fn whole_page() -> Slot {
 
 fn half_pages() -> [Slot; 2] {
     let page = whole_page();
-    let height = (page.height - MINI_GAP) / 2.0;
+    let height = (page.height - GAP) / 2.0;
     let slot = |row: f64| Slot {
         left: page.left,
-        top: page.top + row * (height + MINI_GAP),
+        top: page.top + row * (height + GAP),
         width: page.width,
         height,
     };
     [slot(0.0), slot(1.0)]
-}
-
-fn quarter_pages() -> [Slot; 4] {
-    let page = whole_page();
-    let width = (page.width - MINI_GAP) / 2.0;
-    let height = (page.height - MINI_GAP) / 2.0;
-    let slot = |column: f64, row: f64| Slot {
-        left: page.left + column * (width + MINI_GAP),
-        top: page.top + row * (height + MINI_GAP),
-        width,
-        height,
-    };
-    [
-        slot(0.0, 0.0),
-        slot(1.0, 0.0),
-        slot(0.0, 1.0),
-        slot(1.0, 1.0),
-    ]
 }
 
 #[cfg(test)]
@@ -216,16 +181,16 @@ mod tests {
 
     #[test]
     fn two_up_book_has_a_back_for_every_page_of_two() {
-        assert_eq!(two_up_book(0, 2, Ink::Colour).len(), 8);
+        assert_eq!(book(0, Layout::TwoUp, 2, Ink::Colour).len(), 8);
     }
 
     #[test]
     fn bigger_levels_have_more_zones() {
         let zones: Vec<usize> = [
-            MINI_TRIVIAL,
-            MINI_EASY,
-            MINI_STANDARD,
-            MINI_HARD,
+            HALF_TRIVIAL,
+            HALF_EASY,
+            HALF_STANDARD,
+            HALF_HARD,
             TRIVIAL,
             EASY,
             STANDARD,
@@ -234,20 +199,13 @@ mod tests {
         .into_iter()
         .map(zones_for)
         .collect();
-        assert_eq!(zones, vec![2, 3, 3, 3, 3, 4, 5, 6]);
+        assert_eq!(zones, vec![3, 3, 4, 5, 3, 4, 5, 6]);
     }
 
     #[test]
     fn each_solution_starts_behind_its_start() {
-        let pages = book(
-            0,
-            &Contents {
-                per_level: 1,
-                minis_per_level: 1,
-            },
-            Ink::Colour,
-        );
-        assert_eq!(pages.len(), 10);
+        let pages = book(0, Layout::OneUp, 1, Ink::Colour);
+        assert_eq!(pages.len(), 8);
         for sheet in pages.chunks(2) {
             let starts: Vec<Point> = sheet[0]
                 .windows(2)
