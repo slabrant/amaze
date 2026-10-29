@@ -81,8 +81,8 @@ cell count, so difficulty scales with size. Near the solution is never less than
 ## Look
 
 - Paths are white with thin black edges, about three quarters of a cell wide. No walls.
-- The space between paths is plain white, and a black line with rounded corners runs round the outside.
-- Light comes from the top left. Every path casts a soft shadow onto the background.
+- The space between paths is plain white. No line runs round the outside.
+- Light comes from the top left. Only bridges cast shadows.
 - Shading is a halftone, like old comics: black dots on a slanted grid, bigger where darker.
 - A crossing's top path is a bridge: plain white and straight. The lower path is shaded where it dips under, on both sides, more on the side away from the light.
 - Turns are rounded, inside and outside.

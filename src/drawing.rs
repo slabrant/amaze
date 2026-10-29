@@ -1,4 +1,4 @@
-use crate::grid::{Cell, Dir, Grid};
+use crate::grid::{Cell, Dir};
 use crate::maze::{Maze, PieceId};
 use std::collections::BTreeMap;
 
@@ -14,14 +14,10 @@ const SHADOW_DEPTH: f64 = 0.3;
 const SHADOW_BANDS: usize = 12;
 const SUN_SIDE_SHADOW: f64 = 0.6;
 const SHADOW: f64 = 0.62;
-const BACKGROUND_SHADOW_DEPTH: f64 = 0.27;
-const BACKGROUND_SHADOW_LAYERS: usize = 8;
-const BACKGROUND_SHADOW: f64 = 0.5;
 const DOT_SPACING: f64 = 0.085;
 const ROUNDING: f64 = 0.25;
 const OVERLAP: f64 = 0.02;
 const INNER_ROUNDING: f64 = 0.1;
-const FRAME_ROUNDING: f64 = ROUNDING + 0.5 - HALF;
 const ARC_STEPS: usize = 6;
 const MARK: f64 = HALF;
 const ROUTE: f64 = 0.3;
@@ -140,7 +136,7 @@ impl Mark {
 
 pub fn draw(maze: &Maze) -> Vec<Mark> {
     let mut fills: Vec<Vec<Point>> = Vec::new();
-    let mut edges: Vec<Vec<Point>> = vec![frame(maze.grid)];
+    let mut edges: Vec<Vec<Point>> = Vec::new();
     let mut shading: Vec<Tone> = Vec::new();
     for cell in maze.grid.cells() {
         let ids = maze.pieces_in(cell);
@@ -186,12 +182,13 @@ pub fn draw(maze: &Maze) -> Vec<Mark> {
             edges.extend(deck_edges(cell, along));
         }
     }
-    let mut marks = halftone(&background_shadow(&fills));
-    marks.extend(outside_frame(maze.grid));
-    marks.extend(fills.into_iter().map(|points| Mark::Polygon {
-        points,
-        colour: Colour::WHITE,
-    }));
+    let mut marks: Vec<Mark> = fills
+        .into_iter()
+        .map(|points| Mark::Polygon {
+            points,
+            colour: Colour::WHITE,
+        })
+        .collect();
     marks.extend(halftone(&shading));
     marks.extend(start_mark(maze, maze.start));
     marks.extend(finish_mark(maze, maze.finish));
@@ -348,49 +345,6 @@ fn fillet(cell: Cell, a: Dir, b: Dir) -> Vec<Point> {
         .collect()
 }
 
-fn frame_corners(grid: Grid) -> [(Point, Vec<Point>); 4] {
-    let (width, height) = (grid.width as f64, grid.height as f64);
-    let r = FRAME_ROUNDING;
-    let quarter = std::f64::consts::FRAC_PI_2;
-    let arc = |(cx, cy): Point, from: f64| -> Vec<Point> {
-        (0..=ARC_STEPS)
-            .map(|step| {
-                let angle = from + quarter * step as f64 / ARC_STEPS as f64;
-                (cx + r * angle.cos(), cy + r * angle.sin())
-            })
-            .collect()
-    };
-    [
-        ((0.0, 0.0), arc((r, r), 2.0 * quarter)),
-        ((width, 0.0), arc((width - r, r), 3.0 * quarter)),
-        ((width, height), arc((width - r, height - r), 0.0)),
-        ((0.0, height), arc((r, height - r), quarter)),
-    ]
-}
-
-fn frame(grid: Grid) -> Vec<Point> {
-    let mut points: Vec<Point> = frame_corners(grid)
-        .into_iter()
-        .flat_map(|(_, arc)| arc)
-        .collect();
-    points.push(points[0]);
-    points
-}
-
-fn outside_frame(grid: Grid) -> Vec<Mark> {
-    frame_corners(grid)
-        .into_iter()
-        .map(|(corner, arc)| {
-            let mut points = vec![corner];
-            points.extend(arc);
-            Mark::Polygon {
-                points,
-                colour: Colour::WHITE,
-            }
-        })
-        .collect()
-}
-
 pub fn draw_solution(maze: &Maze) -> Vec<Mark> {
     let route = maze.solution();
     let halves = route.windows(2).flat_map(|pair| {
@@ -443,26 +397,6 @@ fn half_route(maze: &Maze, id: PieceId, edge: Point) -> Vec<Point> {
         edge,
         (middle.0 + toward.0 * scale, middle.1 + toward.1 * scale),
     ]
-}
-
-fn background_shadow(fills: &[Vec<Point>]) -> Vec<Tone> {
-    (1..=BACKGROUND_SHADOW_LAYERS)
-        .rev()
-        .flat_map(|layer| {
-            let reach = BACKGROUND_SHADOW_DEPTH * layer as f64 / BACKGROUND_SHADOW_LAYERS as f64;
-            let fade = (layer - 1) as f64 / BACKGROUND_SHADOW_LAYERS as f64;
-            let darkness = (1.0 - BACKGROUND_SHADOW) * (1.0 - fade);
-            fills.iter().map(move |points| {
-                (
-                    points
-                        .iter()
-                        .map(|&(x, y)| (x + LIGHT.0 * reach, y + LIGHT.1 * reach))
-                        .collect(),
-                    darkness,
-                )
-            })
-        })
-        .collect()
 }
 
 fn halftone(tones: &[Tone]) -> Vec<Mark> {
