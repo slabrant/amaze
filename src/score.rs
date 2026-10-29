@@ -1,4 +1,4 @@
-use crate::goals::{cells_near, long_enough, long_route, zone_counts};
+use crate::goals::{cells_near, long_enough, long_route, zone_counts, zone_joins};
 use crate::grid::Cell;
 use crate::maze::{Content, Maze, PieceId, Routes, Step, StepCell};
 
@@ -51,14 +51,32 @@ pub const STEP_PRIORITIES: [f64; 8] = [25.0, 30.0, 10.0, 5.0, 5.0, 12.0, 25.0, 2
 
 pub const ZONE_START_TERMS: [&str; 3] = ["joins apart", "next zone room", "finish near start"];
 
-pub const ZONE_START_PRIORITIES: [f64; 3] = [39.0, 15.0, 95.0];
+pub const ZONE_START_PRIORITIES: [f64; 3] = [100.0, 15.0, 95.0];
 
 pub fn zone_start_terms(maze: &Maze, entry: PieceId, step: &Step, last: bool) -> Vec<f64> {
     let route = maze.routes_from(&[entry]).distances[step.from];
-    let crow = maze
-        .piece(entry)
-        .cell
-        .squared_distance(maze.piece(step.from).cell);
+    let join = maze.piece(step.from).cell;
+    let joins: Vec<Cell> = zone_joins(maze)
+        .into_iter()
+        .chain(std::iter::once(maze.piece(entry).cell))
+        .collect();
+    let nearest_join = |cell: Cell| {
+        joins
+            .iter()
+            .map(|&other| other.squared_distance(cell))
+            .min()
+            .unwrap_or(0)
+    };
+    let crow = nearest_join(join);
+    let reach = if last {
+        0
+    } else {
+        step.cells
+            .iter()
+            .map(|c| nearest_join(c.cell).min(c.cell.squared_distance(join)))
+            .max()
+            .unwrap_or(0)
+    };
     let start_to_loop = step
         .cells
         .iter()
@@ -72,7 +90,7 @@ pub fn zone_start_terms(maze: &Maze, entry: PieceId, step: &Step, last: bool) ->
     };
     let room = if last { 0 } else { next_zone_room(maze, step) };
     vec![
-        (route as f64 + (crow as f64).sqrt()) / 2.0,
+        (route as f64 + (crow as f64).sqrt() + (reach as f64).sqrt()) / 3.0,
         room as f64,
         -finish_away,
     ]

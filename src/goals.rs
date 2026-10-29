@@ -1,11 +1,12 @@
 use crate::grid::{Cell, Grid};
-use crate::maze::{Content, Maze};
+use crate::maze::{Content, Maze, SHORTEST_CIRCUIT};
 use crate::solvers::{Solver, steps_to_finish};
 use rand::prelude::*;
 
 const NEAR: f64 = 0.13;
 const LONG_ROUTE: f64 = 0.53;
 const MIXING_REACH: f64 = 0.088;
+const LEAST_NEAR: usize = 2;
 const LONG_ENOUGH: f64 = 0.2;
 const SOLVER_RUNS: usize = 10;
 const SOLVER_PATIENCE: usize = 50;
@@ -53,7 +54,7 @@ pub fn measure(maze: &Maze) -> Measures {
             .enumerate()
             .flat_map(|(i, &a)| joins[i + 1..].iter().map(move |&b| a.squared_distance(b)))
             .min()
-            .map_or(0.0, |squared| (squared as f64).sqrt() / side(maze.grid)),
+            .map_or(1.0, |squared| (squared as f64).sqrt() / side(maze.grid)),
         filling: maze_cells.len() as f64 / cells.len() as f64,
         finish_near_start: {
             let (width, height) = (maze.grid.width as f64, maze.grid.height as f64);
@@ -117,11 +118,11 @@ pub fn share_of_side(grid: Grid, share: f64) -> usize {
 }
 
 pub fn near(grid: Grid) -> usize {
-    share_of_side(grid, NEAR)
+    share_of_side(grid, NEAR).max(LEAST_NEAR)
 }
 
 pub fn long_route(grid: Grid) -> usize {
-    share_of_side(grid, LONG_ROUTE)
+    share_of_side(grid, LONG_ROUTE).max(SHORTEST_CIRCUIT)
 }
 
 pub fn long_enough(maze: &Maze) -> usize {

@@ -52,6 +52,8 @@ filled. If a zone cannot be started, generation fails.
 9. Zone balance: zones are about the same size.
 10. Solution length: the solution is long enough (a fifth of the grid's cells), but no longer is better; long solutions are tiresome.
 
+For a step that starts a zone, joins apart also counts how far its path reaches
+from the joins already made, since the next zone's join will be on that path.
 Steps that start a zone are also scored on next zone room: empty cells beside
 the new path, so the next zone has somewhere to start from.
 
@@ -62,12 +64,13 @@ and every measure is a share or a rate, so mazes of different sizes compare.
 
 Distances the goals use (near the solution, a long way round, how far zones mix,
 how near the finish must be) are shares of the grid's side, the square root of its
-cell count, so difficulty scales with size.
+cell count, so difficulty scales with size. Near the solution is never less than
+2 cells, and a long way round never shorter than the shortest circuit the rules allow.
 
 - Long way round: share of neighbouring paths whose shortest route between them is long.
 - Solution coverage: share of maze cells a few cells from the solution.
 - Crossings, crossings in a row: per cell of the grid.
-- Joins apart: crow-flies distance between the two nearest zone joins, as a share of the grid's side.
+- Joins apart: crow-flies distance between the two nearest zone joins, as a share of the grid's side; 1 when there is only one join.
 - Filling: share of cells that are not empty.
 - Finish near start: 1 minus the start-to-finish distance as a share of the grid's diagonal.
 - Zones mixed: how much the least mixed zone is spread among the others.
