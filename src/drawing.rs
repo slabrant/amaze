@@ -5,14 +5,9 @@ use std::collections::BTreeMap;
 const CORRIDOR: f64 = 0.75;
 const HALF: f64 = CORRIDOR / 2.0;
 const EDGE: f64 = 0.06;
-const LIGHT: Point = (
-    std::f64::consts::FRAC_1_SQRT_2,
-    std::f64::consts::FRAC_1_SQRT_2,
-);
 const TILE_OVERLAP: f64 = 0.003;
 const SHADOW_DEPTH: f64 = 0.3;
 const SHADOW_BANDS: usize = 12;
-const SUN_SIDE_SHADOW: f64 = 0.6;
 const SHADOW: f64 = 0.62;
 const DOT_SPACING: f64 = 0.085;
 const ROUNDING: f64 = 0.25;
@@ -231,28 +226,16 @@ fn offset(dir: Dir) -> Point {
     }
 }
 
-fn facing(dir: Dir) -> f64 {
-    let (dx, dy) = offset(dir);
-    dx * LIGHT.0 + dy * LIGHT.1
-}
-
 fn dip(cell: Cell, along: Dir) -> Vec<Tone> {
-    let across = along.turned_right();
-    let light_across = facing(across);
     let mut shading = Vec::new();
     for sign in [1.0, -1.0] {
-        let darkness = if sign * light_across >= 0.0 {
-            1.0 - SHADOW
-        } else {
-            (1.0 - SHADOW) * SUN_SIDE_SHADOW
-        };
         for band in 0..SHADOW_BANDS {
             let from = HALF + SHADOW_DEPTH * band as f64 / SHADOW_BANDS as f64;
             let to = HALF + SHADOW_DEPTH * (band + 1) as f64 / SHADOW_BANDS as f64 + TILE_OVERLAP;
             let fade = band as f64 / SHADOW_BANDS as f64;
             shading.push((
                 rectangle(cell, along, (-HALF, HALF), (sign * from, sign * to)),
-                darkness * (1.0 - fade),
+                (1.0 - SHADOW) * (1.0 - fade),
             ));
         }
     }
