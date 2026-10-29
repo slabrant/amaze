@@ -1,4 +1,5 @@
 use amaze::book::{Contents, book, two_up_book};
+use amaze::drawing::Ink;
 use amaze::pdf::pdf;
 use std::process::ExitCode;
 
@@ -9,9 +10,14 @@ const TWO_UP_PER_LEVEL: usize = 2;
 fn main() -> ExitCode {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let two_up = args.iter().any(|arg| arg == "--two-up");
-    args.retain(|arg| arg != "--two-up");
+    let ink = if args.iter().any(|arg| arg == "--black") {
+        Ink::Black
+    } else {
+        Ink::Colour
+    };
+    args.retain(|arg| arg != "--two-up" && arg != "--black");
     let Some(out) = args.first() else {
-        eprintln!("usage: amaze <book.pdf> [seed] [--two-up]");
+        eprintln!("usage: amaze <book.pdf> [seed] [--two-up] [--black]");
         return ExitCode::FAILURE;
     };
     let seed = match args.get(1).map(|seed| seed.parse::<u64>()) {
@@ -27,9 +33,9 @@ fn main() -> ExitCode {
         minis_per_level: MINIS_PER_LEVEL,
     };
     let pages = if two_up {
-        two_up_book(seed, TWO_UP_PER_LEVEL)
+        two_up_book(seed, TWO_UP_PER_LEVEL, ink)
     } else {
-        book(seed, &contents)
+        book(seed, &contents, ink)
     };
     match std::fs::write(out, pdf(&pages)) {
         Ok(()) => {

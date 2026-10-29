@@ -1,6 +1,6 @@
 #[cfg(test)]
 use crate::drawing::Colour;
-use crate::drawing::{Mark, Point, draw, draw_solution};
+use crate::drawing::{Ink, Mark, Point, draw, draw_solution};
 use crate::generate::generate;
 use crate::grid::Grid;
 use crate::maze::Maze;
@@ -75,7 +75,7 @@ struct Slot {
     height: f64,
 }
 
-pub fn book(seed: u64, contents: &Contents) -> Vec<Vec<Mark>> {
+pub fn book(seed: u64, contents: &Contents, ink: Ink) -> Vec<Vec<Mark>> {
     let full_size = [TRIVIAL, EASY, STANDARD, HARD]
         .into_iter()
         .flat_map(|grid| std::iter::repeat_n(grid, contents.per_level));
@@ -88,15 +88,15 @@ pub fn book(seed: u64, contents: &Contents) -> Vec<Vec<Mark>> {
     let (full_size, mini) = mazes.split_at(full_size_count);
     let mut pages = Vec::new();
     for maze in full_size {
-        pages.extend(sheet(std::slice::from_ref(maze), &[whole_page()]));
+        pages.extend(sheet(std::slice::from_ref(maze), &[whole_page()], ink));
     }
     for page in mini.chunks(4) {
-        pages.extend(sheet(page, &quarter_pages()));
+        pages.extend(sheet(page, &quarter_pages(), ink));
     }
     pages
 }
 
-pub fn two_up_book(seed: u64, per_level: usize) -> Vec<Vec<Mark>> {
+pub fn two_up_book(seed: u64, per_level: usize, ink: Ink) -> Vec<Vec<Mark>> {
     let jobs: Vec<(Grid, u64)> = [HALF_TRIVIAL, HALF_EASY, HALF_STANDARD, HALF_HARD]
         .into_iter()
         .flat_map(|grid| std::iter::repeat_n(grid, per_level))
@@ -104,7 +104,7 @@ pub fn two_up_book(seed: u64, per_level: usize) -> Vec<Vec<Mark>> {
         .collect();
     mazes(&jobs)
         .chunks(2)
-        .flat_map(|page| sheet(page, &half_pages()))
+        .flat_map(|page| sheet(page, &half_pages(), ink))
         .collect()
 }
 
@@ -147,16 +147,16 @@ fn maze(grid: Grid, seed: u64) -> Maze {
         .expect("a maze within the retries")
 }
 
-fn sheet(mazes: &[Maze], slots: &[Slot]) -> [Vec<Mark>; 2] {
+fn sheet(mazes: &[Maze], slots: &[Slot], ink: Ink) -> [Vec<Mark>; 2] {
     let front = mazes
         .iter()
         .zip(slots)
-        .flat_map(|(maze, slot)| place(maze, &draw(maze), slot))
+        .flat_map(|(maze, slot)| place(maze, &draw(maze, ink), slot))
         .collect();
     let back = mazes
         .iter()
         .zip(slots)
-        .flat_map(|(maze, slot)| place(maze, &draw_solution(maze), slot))
+        .flat_map(|(maze, slot)| place(maze, &draw_solution(maze, ink), slot))
         .map(|mark| mark.moved(1.0, |(x, y)| (LETTER.0 - x, y)))
         .collect();
     [front, back]
@@ -216,7 +216,7 @@ mod tests {
 
     #[test]
     fn two_up_book_has_a_back_for_every_page_of_two() {
-        assert_eq!(two_up_book(0, 2).len(), 8);
+        assert_eq!(two_up_book(0, 2, Ink::Colour).len(), 8);
     }
 
     #[test]
@@ -245,6 +245,7 @@ mod tests {
                 per_level: 1,
                 minis_per_level: 1,
             },
+            Ink::Colour,
         );
         assert_eq!(pages.len(), 10);
         for sheet in pages.chunks(2) {

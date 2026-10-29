@@ -1,4 +1,4 @@
-use crate::drawing::{Colour, Mark, draw, draw_solution, draw_zones};
+use crate::drawing::{Colour, Ink, Mark, draw, draw_solution, draw_zones};
 use crate::maze::Maze;
 use std::fmt::Write;
 
@@ -33,12 +33,12 @@ const ZONE_COLOURS: [Colour; 5] = [
 ];
 
 pub fn render(maze: &Maze) -> String {
-    svg(maze, &draw(maze))
+    svg(maze, &draw(maze, Ink::Colour))
 }
 
 pub fn render_solution(maze: &Maze) -> String {
-    let mut marks = draw(maze);
-    marks.extend(draw_solution(maze));
+    let mut marks = draw(maze, Ink::Colour);
+    marks.extend(draw_solution(maze, Ink::Colour));
     svg(maze, &marks)
 }
 

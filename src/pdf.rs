@@ -81,8 +81,8 @@ fn content(marks: &[Mark], height: f64) -> String {
                 };
                 writeln!(
                     out,
-                    "{} RG {width:.3} w {cap} J {join} j {pattern}",
-                    rgb(*colour)
+                    "{} {width:.3} w {cap} J {join} j {pattern}",
+                    paint(*colour, true)
                 )
                 .unwrap();
                 for line in lines {
@@ -100,7 +100,7 @@ fn content(marks: &[Mark], height: f64) -> String {
                 colour,
             } => {
                 let (x, y) = up(*centre);
-                write!(out, "{} rg {:.2} {y:.2} m ", rgb(*colour), x + radius).unwrap();
+                write!(out, "{} {:.2} {y:.2} m ", paint(*colour, false), x + radius).unwrap();
                 let around = [(1.0, 0.0), (0.0, 1.0), (-1.0, 0.0), (0.0, -1.0), (1.0, 0.0)];
                 for pair in around.windows(2) {
                     let ((ax, ay), (bx, by)) = (pair[0], pair[1]);
@@ -120,7 +120,7 @@ fn content(marks: &[Mark], height: f64) -> String {
                 out.push_str("f\n");
             }
             Mark::Polygon { points, colour } => {
-                write!(out, "{} rg ", rgb(*colour)).unwrap();
+                write!(out, "{} ", paint(*colour, false)).unwrap();
                 for (i, &point) in points.iter().enumerate() {
                     let (x, y) = up(point);
                     let verb = if i == 0 { "m" } else { "l" };
@@ -133,8 +133,15 @@ fn content(marks: &[Mark], height: f64) -> String {
     out
 }
 
-fn rgb(colour: Colour) -> String {
-    format!("{:.3} {:.3} {:.3}", colour.red, colour.green, colour.blue)
+fn paint(colour: Colour, stroke: bool) -> String {
+    let Colour { red, green, blue } = colour;
+    if red == green && green == blue {
+        let verb = if stroke { "K" } else { "k" };
+        format!("0 0 0 {:.3} {verb}", 1.0 - red)
+    } else {
+        let verb = if stroke { "RG" } else { "rg" };
+        format!("{red:.3} {green:.3} {blue:.3} {verb}")
+    }
 }
 
 #[cfg(test)]
