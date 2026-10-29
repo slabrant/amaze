@@ -25,8 +25,7 @@ const ROUTE_GAP: f64 = HALF + 0.08;
 const ROUTE_HUES: (f64, f64) = (0.0, 0.78);
 const BLACK_ROUTE: f64 = 0.36;
 const BLACK_ROUTE_GAP: f64 = 0.48;
-const ROUTE_TONES: (f64, f64) = (0.05, 0.35);
-const ROUTE_EDGE: f64 = 0.035;
+const ROUTE_TONES: (f64, f64) = (0.12, 0.4);
 const ROUTE_TONE_CYCLE: f64 = 10.0;
 
 pub type Point = (f64, f64);
@@ -400,7 +399,7 @@ pub fn draw_solution(maze: &Maze, ink: Ink) -> Vec<Mark> {
             })
             .collect(),
         Ink::Black => {
-            let (lines, tones): (Vec<Vec<Point>>, Vec<Tone>) = halves
+            let tones: Vec<Tone> = halves
                 .enumerate()
                 .map(|(i, (id, edge))| {
                     let along = i.div_ceil(2) as f64;
@@ -408,28 +407,10 @@ pub fn draw_solution(maze: &Maze, ink: Ink) -> Vec<Mark> {
                         (1.0 - (std::f64::consts::TAU * along / ROUTE_TONE_CYCLE).cos()) / 2.0;
                     let darkness = ROUTE_TONES.0 + (ROUTE_TONES.1 - ROUTE_TONES.0) * wave;
                     let line = half_route(maze, id, edge, BLACK_ROUTE_GAP);
-                    let shape = capsule(line[0], line[1], BLACK_ROUTE / 2.0 - ROUTE_EDGE);
-                    (line, (shape, darkness))
+                    (capsule(line[0], line[1], BLACK_ROUTE / 2.0), darkness)
                 })
-                .unzip();
-            let mut marks = vec![
-                Mark::Lines {
-                    lines: lines.clone(),
-                    width: BLACK_ROUTE,
-                    colour: Colour::BLACK,
-                    dash: None,
-                    round: true,
-                },
-                Mark::Lines {
-                    lines,
-                    width: BLACK_ROUTE - 2.0 * ROUTE_EDGE,
-                    colour: Colour::WHITE,
-                    dash: None,
-                    round: true,
-                },
-            ];
-            marks.extend(halftone(&tones));
-            marks
+                .collect();
+            halftone(&tones)
         }
     }
 }
