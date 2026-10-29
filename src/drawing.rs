@@ -9,6 +9,9 @@ const TILE_OVERLAP: f64 = 0.003;
 const SHADOW_DEPTH: f64 = 0.3;
 const SHADOW_BANDS: usize = 12;
 const SHADOW: f64 = 0.62;
+const HALO_DEPTH: f64 = 0.1;
+const HALO_BANDS: usize = 3;
+const HALO: f64 = 0.3;
 const ROUNDING: f64 = 0.25;
 const OVERLAP: f64 = 0.02;
 const INNER_ROUNDING: f64 = 0.1;
@@ -215,13 +218,11 @@ pub fn draw(maze: &Maze, ink: Ink) -> Vec<Mark> {
             edges.extend(deck_edges(cell, along));
         }
     }
-    let mut marks: Vec<Mark> = fills
-        .into_iter()
-        .map(|points| Mark::Polygon {
-            points,
-            colour: Colour::WHITE,
-        })
-        .collect();
+    let mut marks = halo(&edges);
+    marks.extend(fills.into_iter().map(|points| Mark::Polygon {
+        points,
+        colour: Colour::WHITE,
+    }));
     marks.extend(shading);
     marks.extend(start_mark(maze, maze.start, ink.start()));
     marks.extend(finish_mark(maze, maze.finish, ink.finish()));
@@ -408,20 +409,56 @@ pub fn draw_solution(maze: &Maze, ink: Ink) -> Vec<Mark> {
 }
 
 fn capsule(from: Point, to: Point, radius: f64) -> Vec<Point> {
+    let (u, n) = heading(from, to);
+    let mut points = vec![(from.0 + n.0 * radius, from.1 + n.1 * radius)];
+    points.extend(round_end(to, u, n, radius));
+    points.push((from.0 - n.0 * radius, from.1 - n.1 * radius));
+    points
+}
+
+fn stadium(from: Point, to: Point, radius: f64) -> Vec<Point> {
+    let (u, n) = heading(from, to);
+    let mut points = round_end(to, u, n, radius);
+    points.extend(round_end(from, (-u.0, -u.1), (-n.0, -n.1), radius));
+    points
+}
+
+fn heading(from: Point, to: Point) -> (Point, Point) {
     let length = ((to.0 - from.0).powi(2) + (to.1 - from.1).powi(2)).sqrt();
     let (ux, uy) = ((to.0 - from.0) / length, (to.1 - from.1) / length);
-    let (nx, ny) = (-uy, ux);
-    let mut points = vec![(from.0 + nx * radius, from.1 + ny * radius)];
-    for step in 0..=2 * ARC_STEPS {
-        let angle = std::f64::consts::PI * step as f64 / (2 * ARC_STEPS) as f64;
-        let (along, across) = (angle.sin() * radius, angle.cos() * radius);
-        points.push((
-            to.0 + ux * along + nx * across,
-            to.1 + uy * along + ny * across,
-        ));
-    }
-    points.push((from.0 - nx * radius, from.1 - ny * radius));
-    points
+    ((ux, uy), (-uy, ux))
+}
+
+fn round_end(at: Point, (ux, uy): Point, (nx, ny): Point, radius: f64) -> Vec<Point> {
+    (0..=2 * ARC_STEPS)
+        .map(|step| {
+            let angle = std::f64::consts::PI * step as f64 / (2 * ARC_STEPS) as f64;
+            let (along, across) = (angle.sin() * radius, angle.cos() * radius);
+            (
+                at.0 + ux * along + nx * across,
+                at.1 + uy * along + ny * across,
+            )
+        })
+        .collect()
+}
+
+fn halo(edges: &[Vec<Point>]) -> Vec<Mark> {
+    let segments: Vec<(Point, Point)> = edges
+        .iter()
+        .flat_map(|line| line.windows(2).map(|pair| (pair[0], pair[1])))
+        .filter(|&(a, b)| a != b)
+        .collect();
+    (0..HALO_BANDS)
+        .flat_map(|band| {
+            let reach = HALO_DEPTH * (band + 1) as f64 / HALO_BANDS as f64;
+            let darkness = HALO * (1.0 - band as f64 / HALO_BANDS as f64);
+            segments.iter().map(move |&(a, b)| Mark::Shade {
+                points: stadium(a, b, reach),
+                darkness,
+                spacing: DOT_SPACING,
+            })
+        })
+        .collect()
 }
 
 pub fn draw_zones(maze: &Maze, colours: &[Colour]) -> Vec<Mark> {
