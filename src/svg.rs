@@ -1,4 +1,4 @@
-use crate::drawing::{Colour, Ink, Mark, draw, draw_solution, draw_zones};
+use crate::drawing::{Colour, Ink, Mark, draw, draw_solution, draw_zones, screen};
 use crate::maze::Maze;
 use std::fmt::Write;
 
@@ -52,8 +52,12 @@ fn svg(maze: &Maze, marks: &[Mark]) -> String {
     let mut svg = format!(
         r#"<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}"><rect width="100%" height="100%" fill="white"/>"#
     );
-    for mark in marks {
-        match mark.moved(CELL, |(x, y)| (x * CELL, y * CELL)) {
+    let placed: Vec<Mark> = marks
+        .iter()
+        .map(|mark| mark.moved(CELL, |(x, y)| (x * CELL, y * CELL)))
+        .collect();
+    for mark in screen(&placed) {
+        match mark {
             Mark::Lines {
                 lines,
                 width,
@@ -105,6 +109,7 @@ fn svg(maze: &Maze, marks: &[Mark]) -> String {
                 )
                 .unwrap();
             }
+            Mark::Shade { .. } => unreachable!("shades are screened into dots"),
         }
     }
     svg.push_str("</svg>");

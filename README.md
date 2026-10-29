@@ -83,7 +83,7 @@ cell count, so difficulty scales with size. Near the solution is never less than
 - Paths are white with thin black edges, about three quarters of a cell wide. No walls.
 - The space between paths is plain white. No line runs round the outside.
 - Only bridges cast shadows.
-- Shading is a halftone, like old comics: black dots on a slanted grid, bigger where darker.
+- Shading is a halftone, like old comics: black dots on a slanted grid, bigger where darker. The dots are the same size on every page, whatever the size of the maze.
 - A crossing's top path is a bridge: plain white and straight. The lower path is shaded where it dips under, equally on both sides.
 - Turns are rounded, inside and outside.
 - At a crossing, the top path is whole and hides the lower path.
@@ -98,7 +98,7 @@ cell count, so difficulty scales with size. Near the solution is never less than
 - Each solution is printed mirrored on the back of its page.
 - With no seed given, a random one is used and printed.
 - With `--two-up`, a book of two mazes to a page instead: four wide sizes, two mazes each, easiest first.
-- With `--black`, everything prints in black ink only: start and finish are black, and the solution is a halftone line, with no outline, that gets lighter and darker in a wave along the route, with no direction to it.
+- With `--black`, everything prints in black ink only: start and finish are black, and the solution is an even halftone line with no outline.
 - Grey and black are written as black ink only, so the printer does not mix them from colour inks.
 - The back shows only the solution: a thick line whose colour runs from red at the start to purple at the finish, with a gap where it goes under another path. Being mirrored, it lines up when the page is held to the light.
 

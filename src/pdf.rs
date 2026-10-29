@@ -1,4 +1,4 @@
-use crate::drawing::{Colour, Mark};
+use crate::drawing::{Colour, Mark, screen};
 use miniz_oxide::deflate::compress_to_vec_zlib;
 use std::fmt::Write;
 
@@ -65,7 +65,7 @@ pub fn pdf(pages: &[Vec<Mark>]) -> Vec<u8> {
 fn content(marks: &[Mark], height: f64) -> String {
     let mut out = String::new();
     let up = |(x, y): (f64, f64)| (x, height - y);
-    for mark in marks {
+    for mark in &screen(marks) {
         match mark {
             Mark::Lines {
                 lines,
@@ -128,6 +128,7 @@ fn content(marks: &[Mark], height: f64) -> String {
                 }
                 out.push_str("h f\n");
             }
+            Mark::Shade { .. } => unreachable!("shades are screened into dots"),
         }
     }
     out

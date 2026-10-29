@@ -9,7 +9,6 @@ const TILE_OVERLAP: f64 = 0.003;
 const SHADOW_DEPTH: f64 = 0.3;
 const SHADOW_BANDS: usize = 12;
 const SHADOW: f64 = 0.62;
-const DOT_SPACING: f64 = 0.085;
 const ROUNDING: f64 = 0.25;
 const OVERLAP: f64 = 0.02;
 const INNER_ROUNDING: f64 = 0.1;
@@ -20,10 +19,11 @@ const ROUTE_GAP: f64 = HALF + 0.08;
 const ROUTE_HUES: (f64, f64) = (0.0, 0.78);
 const BLACK_ROUTE: f64 = 0.36;
 const BLACK_ROUTE_GAP: f64 = 0.48;
-const ROUTE_TONES: (f64, f64) = (0.12, 0.4);
-const ROUTE_TONE_CYCLE: f64 = 10.0;
+const ROUTE_TONE: f64 = 0.25;
 
 pub type Point = (f64, f64);
+
+pub const DOT_SPACING: f64 = 1.7;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Ink {
@@ -46,8 +46,6 @@ impl Ink {
         }
     }
 }
-
-type Tone = (Vec<Point>, f64);
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Colour {
@@ -117,6 +115,10 @@ pub enum Mark {
         points: Vec<Point>,
         colour: Colour,
     },
+    Shade {
+        points: Vec<Point>,
+        darkness: f64,
+    },
 }
 
 impl Mark {
@@ -151,6 +153,10 @@ impl Mark {
                 points: points.iter().map(|&point| place(point)).collect(),
                 colour: *colour,
             },
+            Mark::Shade { points, darkness } => Mark::Shade {
+                points: points.iter().map(|&point| place(point)).collect(),
+                darkness: *darkness,
+            },
         }
     }
 }
@@ -158,7 +164,7 @@ impl Mark {
 pub fn draw(maze: &Maze, ink: Ink) -> Vec<Mark> {
     let mut fills: Vec<Vec<Point>> = Vec::new();
     let mut edges: Vec<Vec<Point>> = Vec::new();
-    let mut shading: Vec<Tone> = Vec::new();
+    let mut shading: Vec<Mark> = Vec::new();
     for cell in maze.grid.cells() {
         let ids = maze.pieces_in(cell);
         if ids.is_empty() {
@@ -210,7 +216,7 @@ pub fn draw(maze: &Maze, ink: Ink) -> Vec<Mark> {
             colour: Colour::WHITE,
         })
         .collect();
-    marks.extend(halftone(&shading));
+    marks.extend(shading);
     marks.extend(start_mark(maze, maze.start, ink.start()));
     marks.extend(finish_mark(maze, maze.finish, ink.finish()));
     marks.push(lines(edges, EDGE, Colour::BLACK));
@@ -226,17 +232,17 @@ fn offset(dir: Dir) -> Point {
     }
 }
 
-fn dip(cell: Cell, along: Dir) -> Vec<Tone> {
+fn dip(cell: Cell, along: Dir) -> Vec<Mark> {
     let mut shading = Vec::new();
     for sign in [1.0, -1.0] {
         for band in 0..SHADOW_BANDS {
             let from = HALF + SHADOW_DEPTH * band as f64 / SHADOW_BANDS as f64;
             let to = HALF + SHADOW_DEPTH * (band + 1) as f64 / SHADOW_BANDS as f64 + TILE_OVERLAP;
             let fade = band as f64 / SHADOW_BANDS as f64;
-            shading.push((
-                rectangle(cell, along, (-HALF, HALF), (sign * from, sign * to)),
-                (1.0 - SHADOW) * (1.0 - fade),
-            ));
+            shading.push(Mark::Shade {
+                points: rectangle(cell, along, (-HALF, HALF), (sign * from, sign * to)),
+                darkness: (1.0 - SHADOW) * (1.0 - fade),
+            });
         }
     }
     shading
@@ -381,20 +387,15 @@ pub fn draw_solution(maze: &Maze, ink: Ink) -> Vec<Mark> {
                 }
             })
             .collect(),
-        Ink::Black => {
-            let tones: Vec<Tone> = halves
-                .enumerate()
-                .map(|(i, (id, edge))| {
-                    let along = i.div_ceil(2) as f64;
-                    let wave =
-                        (1.0 - (std::f64::consts::TAU * along / ROUTE_TONE_CYCLE).cos()) / 2.0;
-                    let darkness = ROUTE_TONES.0 + (ROUTE_TONES.1 - ROUTE_TONES.0) * wave;
-                    let line = half_route(maze, id, edge, BLACK_ROUTE_GAP);
-                    (capsule(line[0], line[1], BLACK_ROUTE / 2.0), darkness)
-                })
-                .collect();
-            halftone(&tones)
-        }
+        Ink::Black => halves
+            .map(|(id, edge)| {
+                let line = half_route(maze, id, edge, BLACK_ROUTE_GAP);
+                Mark::Shade {
+                    points: capsule(line[0], line[1], BLACK_ROUTE / 2.0),
+                    darkness: ROUTE_TONE,
+                }
+            })
+            .collect(),
     }
 }
 
@@ -441,10 +442,26 @@ fn half_route(maze: &Maze, id: PieceId, edge: Point, gap: f64) -> Vec<Point> {
     ]
 }
 
-fn halftone(tones: &[Tone]) -> Vec<Mark> {
+pub fn screen(marks: &[Mark]) -> Vec<Mark> {
+    let mut screened = Vec::new();
+    let mut shades: Vec<(&[Point], f64)> = Vec::new();
+    for mark in marks {
+        if let Mark::Shade { points, darkness } = mark {
+            shades.push((points, *darkness));
+        } else {
+            screened.extend(halftone(&shades));
+            shades.clear();
+            screened.push(mark.clone());
+        }
+    }
+    screened.extend(halftone(&shades));
+    screened
+}
+
+fn halftone(shades: &[(&[Point], f64)]) -> Vec<Mark> {
     let step = DOT_SPACING * std::f64::consts::FRAC_1_SQRT_2;
     let mut dots: BTreeMap<(i64, i64), f64> = BTreeMap::new();
-    for (points, darkness) in tones {
+    for &(points, darkness) in shades {
         let span = |axis: fn(&Point) -> f64| {
             let low = points.iter().map(axis).fold(f64::INFINITY, f64::min);
             let high = points.iter().map(axis).fold(f64::NEG_INFINITY, f64::max);
@@ -455,7 +472,7 @@ fn halftone(tones: &[Tone]) -> Vec<Mark> {
                 if (i + j).rem_euclid(2) == 0 && inside(points, (i as f64 * step, j as f64 * step))
                 {
                     let dot = dots.entry((i, j)).or_insert(0.0);
-                    *dot = dot.max(*darkness);
+                    *dot = dot.max(darkness);
                 }
             }
         }
