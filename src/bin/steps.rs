@@ -1,4 +1,4 @@
-use amaze::book::{STANDARD, zones_for};
+use amaze::book::{levels, zones_for};
 use amaze::generate::{Choice, Event, Kind, generate_watched, total};
 use amaze::goals::{Measures, measure};
 use amaze::grid::{Cell, Grid};
@@ -21,8 +21,8 @@ fn main() -> ExitCode {
     let (Ok(seeds), Ok(first), Ok(width), Ok(height)) = (
         number(1, SEEDS as u64),
         number(2, rand::random::<u32>() as u64),
-        number(3, STANDARD.width as u64),
-        number(4, STANDARD.height as u64),
+        number(3, levels(1)[2].width as u64),
+        number(4, levels(1)[2].height as u64),
     ) else {
         eprintln!("seeds, first seed, width and height must be whole numbers");
         return ExitCode::FAILURE;

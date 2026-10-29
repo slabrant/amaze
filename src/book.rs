@@ -12,64 +12,8 @@ const MARGIN: f64 = 15.0 * MILLIMETRE;
 const GAP: f64 = 10.0 * MILLIMETRE;
 const SIDE_PER_ZONE: f64 = 4.5;
 const RETRIES: u64 = 20;
+const LEVEL_SIDES: [f64; 4] = [12.0, 16.0, 20.0, 24.0];
 
-pub const TRIVIAL: Grid = Grid {
-    width: 12,
-    height: 15,
-};
-pub const EASY: Grid = Grid {
-    width: 16,
-    height: 20,
-};
-pub const STANDARD: Grid = Grid {
-    width: 20,
-    height: 26,
-};
-pub const HARD: Grid = Grid {
-    width: 24,
-    height: 31,
-};
-
-pub const HALF_TRIVIAL: Grid = Grid {
-    width: 15,
-    height: 10,
-};
-pub const HALF_EASY: Grid = Grid {
-    width: 19,
-    height: 12,
-};
-pub const HALF_STANDARD: Grid = Grid {
-    width: 23,
-    height: 14,
-};
-pub const HALF_HARD: Grid = Grid {
-    width: 27,
-    height: 17,
-};
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Layout {
-    OneUp,
-    TwoUp,
-}
-
-impl Layout {
-    fn levels(self) -> [Grid; 4] {
-        match self {
-            Layout::OneUp => [TRIVIAL, EASY, STANDARD, HARD],
-            Layout::TwoUp => [HALF_TRIVIAL, HALF_EASY, HALF_STANDARD, HALF_HARD],
-        }
-    }
-
-    fn slots(self) -> Vec<Slot> {
-        match self {
-            Layout::OneUp => vec![whole_page()],
-            Layout::TwoUp => half_pages().to_vec(),
-        }
-    }
-}
-
-#[derive(Clone)]
 struct Slot {
     left: f64,
     top: f64,
@@ -77,18 +21,42 @@ struct Slot {
     height: f64,
 }
 
-pub fn book(seed: u64, layout: Layout, ink: Ink) -> Vec<Vec<Mark>> {
-    let slots = layout.slots();
-    let jobs: Vec<(Grid, u64)> = layout
-        .levels()
+pub fn book(seed: u64, per_page: usize, ink: Ink) -> Vec<Vec<Mark>> {
+    let slots = slots(per_page);
+    let jobs: Vec<(Grid, u64)> = grids(&slots[0])
         .into_iter()
-        .flat_map(|grid| std::iter::repeat_n(grid, slots.len()))
+        .flat_map(|grid| std::iter::repeat_n(grid, per_page))
         .zip(seed..)
         .collect();
     mazes(&jobs)
-        .chunks(slots.len())
+        .chunks(per_page)
         .flat_map(|page| sheet(page, &slots, ink))
         .collect()
+}
+
+pub fn levels(per_page: usize) -> [Grid; 4] {
+    grids(&slots(per_page)[0])
+}
+
+fn grids(slot: &Slot) -> [Grid; 4] {
+    let page = whole_page();
+    let (short, long) = (slot.width.min(slot.height), slot.width.max(slot.height));
+    let shrink = (short / page.width.min(page.height)).sqrt();
+    LEVEL_SIDES.map(|side| {
+        let across = (side * shrink).round().max(4.0);
+        let along = (long * across / short).floor().max(4.0);
+        if slot.width <= slot.height {
+            Grid {
+                width: across as usize,
+                height: along as usize,
+            }
+        } else {
+            Grid {
+                width: along as usize,
+                height: across as usize,
+            }
+        }
+    })
 }
 
 fn mazes(jobs: &[(Grid, u64)]) -> Vec<Maze> {
@@ -163,16 +131,32 @@ fn whole_page() -> Slot {
     }
 }
 
-fn half_pages() -> [Slot; 2] {
+fn slots(per_page: usize) -> Vec<Slot> {
     let page = whole_page();
-    let height = (page.height - GAP) / 2.0;
-    let slot = |row: f64| Slot {
-        left: page.left,
-        top: page.top + row * (height + GAP),
-        width: page.width,
-        height,
+    let size = |columns: usize| {
+        let rows = per_page.div_ceil(columns);
+        (
+            (page.width - GAP * (columns - 1) as f64) / columns as f64,
+            (page.height - GAP * (rows - 1) as f64) / rows as f64,
+        )
     };
-    [slot(0.0), slot(1.0)]
+    let columns = (1..=per_page)
+        .rev()
+        .max_by(|&a, &b| {
+            let (aw, ah) = size(a);
+            let (bw, bh) = size(b);
+            aw.min(ah).total_cmp(&bw.min(bh))
+        })
+        .expect("at least one maze to a page");
+    let (width, height) = size(columns);
+    (0..per_page)
+        .map(|i| Slot {
+            left: page.left + (i % columns) as f64 * (width + GAP),
+            top: page.top + (i / columns) as f64 * (height + GAP),
+            width,
+            height,
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -181,30 +165,48 @@ mod tests {
 
     #[test]
     fn every_book_has_eight_pages() {
-        assert_eq!(book(0, Layout::TwoUp, Ink::Colour).len(), 8);
+        assert_eq!(book(0, 2, Ink::Colour).len(), 8);
     }
 
     #[test]
-    fn bigger_levels_have_more_zones() {
-        let zones: Vec<usize> = [
-            HALF_TRIVIAL,
-            HALF_EASY,
-            HALF_STANDARD,
-            HALF_HARD,
-            TRIVIAL,
-            EASY,
-            STANDARD,
-            HARD,
-        ]
-        .into_iter()
-        .map(zones_for)
-        .collect();
-        assert_eq!(zones, vec![3, 3, 4, 5, 3, 4, 5, 6]);
+    fn levels_grow_and_fill_their_slot() {
+        assert_eq!(
+            levels(2),
+            [
+                Grid {
+                    width: 15,
+                    height: 10
+                },
+                Grid {
+                    width: 20,
+                    height: 13
+                },
+                Grid {
+                    width: 24,
+                    height: 16
+                },
+                Grid {
+                    width: 29,
+                    height: 19
+                },
+            ]
+        );
+        for per_page in 1..=6 {
+            let zones = levels(per_page).map(zones_for);
+            assert!(zones.windows(2).all(|pair| pair[0] <= pair[1]));
+        }
+    }
+
+    #[test]
+    fn four_to_a_page_is_two_by_two() {
+        let slots = slots(4);
+        assert_eq!(slots[0].top, slots[1].top);
+        assert_eq!(slots[0].left, slots[2].left);
     }
 
     #[test]
     fn each_solution_starts_behind_its_start() {
-        let pages = book(0, Layout::OneUp, Ink::Colour);
+        let pages = book(0, 1, Ink::Colour);
         assert_eq!(pages.len(), 8);
         for sheet in pages.chunks(2) {
             let starts: Vec<Point> = sheet[0]

@@ -618,7 +618,7 @@ mod tests {
     #[ignore]
     fn reports_goals_over_many_seeds() {
         let seeds = 40;
-        let grid = crate::book::STANDARD;
+        let grid = crate::book::levels(1)[2];
         let started = std::time::Instant::now();
         let made: Vec<Maze> = (0..seeds)
             .filter_map(|seed| generate(grid, seed, crate::book::zones_for(grid)).ok())
