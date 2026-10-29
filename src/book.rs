@@ -77,14 +77,14 @@ struct Slot {
     height: f64,
 }
 
-pub fn book(seed: u64, layout: Layout, per_level: usize, ink: Ink) -> Vec<Vec<Mark>> {
+pub fn book(seed: u64, layout: Layout, ink: Ink) -> Vec<Vec<Mark>> {
+    let slots = layout.slots();
     let jobs: Vec<(Grid, u64)> = layout
         .levels()
         .into_iter()
-        .flat_map(|grid| std::iter::repeat_n(grid, per_level))
+        .flat_map(|grid| std::iter::repeat_n(grid, slots.len()))
         .zip(seed..)
         .collect();
-    let slots = layout.slots();
     mazes(&jobs)
         .chunks(slots.len())
         .flat_map(|page| sheet(page, &slots, ink))
@@ -180,8 +180,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn two_up_book_has_a_back_for_every_page_of_two() {
-        assert_eq!(book(0, Layout::TwoUp, 2, Ink::Colour).len(), 8);
+    fn every_book_has_eight_pages() {
+        assert_eq!(book(0, Layout::TwoUp, Ink::Colour).len(), 8);
     }
 
     #[test]
@@ -204,7 +204,7 @@ mod tests {
 
     #[test]
     fn each_solution_starts_behind_its_start() {
-        let pages = book(0, Layout::OneUp, 1, Ink::Colour);
+        let pages = book(0, Layout::OneUp, Ink::Colour);
         assert_eq!(pages.len(), 8);
         for sheet in pages.chunks(2) {
             let starts: Vec<Point> = sheet[0]

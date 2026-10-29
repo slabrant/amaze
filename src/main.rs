@@ -3,8 +3,6 @@ use amaze::drawing::Ink;
 use amaze::pdf::pdf;
 use std::process::ExitCode;
 
-const PER_LEVEL: usize = 2;
-
 fn main() -> ExitCode {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let layout = if args.iter().any(|arg| arg == "--two-up") {
@@ -30,7 +28,7 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let pages = book(seed, layout, PER_LEVEL, ink);
+    let pages = book(seed, layout, ink);
     match std::fs::write(out, pdf(&pages)) {
         Ok(()) => {
             println!("seed {seed}");
