@@ -13,6 +13,7 @@ const GAP: f64 = 10.0 * MILLIMETRE;
 const SIDE_PER_ZONE: f64 = 4.5;
 const RETRIES: u64 = 20;
 const LEVEL_SIDES: [f64; 4] = [12.0, 16.0, 20.0, 24.0];
+const LEVEL_DOT_SPACINGS: [f64; 4] = [2.2, 2.0, 1.85, 1.7];
 
 struct Slot {
     left: f64,
@@ -28,7 +29,11 @@ pub fn book(seed: u64, per_page: usize, ink: Ink) -> Vec<Vec<Mark>> {
         .flat_map(|grid| std::iter::repeat_n(grid, per_page))
         .zip(seed..)
         .collect();
-    mazes(&jobs)
+    let spacings = LEVEL_DOT_SPACINGS
+        .into_iter()
+        .flat_map(|spacing| std::iter::repeat_n(spacing, per_page));
+    let mazes: Vec<(Maze, f64)> = mazes(&jobs).into_iter().zip(spacings).collect();
+    mazes
         .chunks(per_page)
         .flat_map(|page| sheet(page, &slots, ink))
         .collect()
@@ -98,28 +103,40 @@ fn maze(grid: Grid, seed: u64) -> Maze {
         .expect("a maze within the retries")
 }
 
-fn sheet(mazes: &[Maze], slots: &[Slot], ink: Ink) -> [Vec<Mark>; 2] {
+fn sheet(mazes: &[(Maze, f64)], slots: &[Slot], ink: Ink) -> [Vec<Mark>; 2] {
     let front = mazes
         .iter()
         .zip(slots)
-        .flat_map(|(maze, slot)| place(maze, &draw(maze, ink), slot))
+        .flat_map(|((maze, spacing), slot)| place(maze, &draw(maze, ink), slot, *spacing))
         .collect();
     let back = mazes
         .iter()
         .zip(slots)
-        .flat_map(|(maze, slot)| place(maze, &draw_solution(maze, ink), slot))
+        .flat_map(|((maze, spacing), slot)| place(maze, &draw_solution(maze, ink), slot, *spacing))
         .map(|mark| mark.moved(1.0, |(x, y)| (LETTER.0 - x, y)))
         .collect();
     [front, back]
 }
 
-fn place(maze: &Maze, marks: &[Mark], slot: &Slot) -> Vec<Mark> {
+fn place(maze: &Maze, marks: &[Mark], slot: &Slot, dots: f64) -> Vec<Mark> {
     let (columns, rows) = (maze.grid.width as f64, maze.grid.height as f64);
     let scale = (slot.width / columns).min(slot.height / rows);
     let left = slot.left + (slot.width - columns * scale) / 2.0;
     let top = slot.top + (slot.height - rows * scale) / 2.0;
     let at = |(x, y): Point| (left + x * scale, top + y * scale);
-    marks.iter().map(|mark| mark.moved(scale, at)).collect()
+    marks
+        .iter()
+        .map(|mark| match mark.moved(scale, at) {
+            Mark::Shade {
+                points, darkness, ..
+            } => Mark::Shade {
+                points,
+                darkness,
+                spacing: dots,
+            },
+            placed => placed,
+        })
+        .collect()
 }
 
 fn whole_page() -> Slot {

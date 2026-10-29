@@ -118,6 +118,7 @@ pub enum Mark {
     Shade {
         points: Vec<Point>,
         darkness: f64,
+        spacing: f64,
     },
 }
 
@@ -153,9 +154,14 @@ impl Mark {
                 points: points.iter().map(|&point| place(point)).collect(),
                 colour: *colour,
             },
-            Mark::Shade { points, darkness } => Mark::Shade {
+            Mark::Shade {
+                points,
+                darkness,
+                spacing,
+            } => Mark::Shade {
                 points: points.iter().map(|&point| place(point)).collect(),
                 darkness: *darkness,
+                spacing: *spacing,
             },
         }
     }
@@ -242,6 +248,7 @@ fn dip(cell: Cell, along: Dir) -> Vec<Mark> {
             shading.push(Mark::Shade {
                 points: rectangle(cell, along, (-HALF, HALF), (sign * from, sign * to)),
                 darkness: (1.0 - SHADOW) * (1.0 - fade),
+                spacing: DOT_SPACING,
             });
         }
     }
@@ -393,6 +400,7 @@ pub fn draw_solution(maze: &Maze, ink: Ink) -> Vec<Mark> {
                 Mark::Shade {
                     points: capsule(line[0], line[1], BLACK_ROUTE / 2.0),
                     darkness: ROUTE_TONE,
+                    spacing: DOT_SPACING,
                 }
             })
             .collect(),
@@ -445,21 +453,34 @@ fn half_route(maze: &Maze, id: PieceId, edge: Point, gap: f64) -> Vec<Point> {
 pub fn screen(marks: &[Mark]) -> Vec<Mark> {
     let mut screened = Vec::new();
     let mut shades: Vec<(&[Point], f64)> = Vec::new();
+    let mut batch = DOT_SPACING;
     for mark in marks {
-        if let Mark::Shade { points, darkness } = mark {
-            shades.push((points, *darkness));
-        } else {
-            screened.extend(halftone(&shades));
-            shades.clear();
-            screened.push(mark.clone());
+        match mark {
+            Mark::Shade {
+                points,
+                darkness,
+                spacing,
+            } => {
+                if *spacing != batch {
+                    screened.extend(halftone(&shades, batch));
+                    shades.clear();
+                    batch = *spacing;
+                }
+                shades.push((points, *darkness));
+            }
+            _ => {
+                screened.extend(halftone(&shades, batch));
+                shades.clear();
+                screened.push(mark.clone());
+            }
         }
     }
-    screened.extend(halftone(&shades));
+    screened.extend(halftone(&shades, batch));
     screened
 }
 
-fn halftone(shades: &[(&[Point], f64)]) -> Vec<Mark> {
-    let step = DOT_SPACING * std::f64::consts::FRAC_1_SQRT_2;
+fn halftone(shades: &[(&[Point], f64)], spacing: f64) -> Vec<Mark> {
+    let step = spacing * std::f64::consts::FRAC_1_SQRT_2;
     let mut dots: BTreeMap<(i64, i64), f64> = BTreeMap::new();
     for &(points, darkness) in shades {
         let span = |axis: fn(&Point) -> f64| {
@@ -489,7 +510,7 @@ fn halftone(shades: &[(&[Point], f64)]) -> Vec<Mark> {
         .into_iter()
         .map(|(darkness, lines)| Mark::Lines {
             lines,
-            width: 2.0 * DOT_SPACING * (f64::from_bits(darkness) / std::f64::consts::PI).sqrt(),
+            width: 2.0 * spacing * (f64::from_bits(darkness) / std::f64::consts::PI).sqrt(),
             colour: Colour::BLACK,
             dash: None,
             round: true,
