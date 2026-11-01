@@ -95,6 +95,7 @@ cell count, so difficulty scales with size. Near the solution is never less than
 ## Output
 
 - A book of eight pages: Trivial, Easy, Standard and Hard, easiest first. With `--per-page N`, N mazes to a page, so N of each level; the default is one.
+- With `--level trivial`, `easy`, `standard` or `hard`, every maze in the book is that level.
 - The page is split into the columns and rows whose slots have the longest short side. Each level's grid has 12, 16, 20 or 24 cells across the short side of a whole page, fewer by the square root of how much smaller the slot's short side is, and as many along the long side as fit at that cell size.
 - Each solution is printed mirrored on the back of its page.
 - With no seed given, a random one is used and printed.

@@ -14,6 +14,8 @@ const SIDE_PER_ZONE: f64 = 4.5;
 const RETRIES: u64 = 20;
 const LEVEL_SIDES: [f64; 4] = [12.0, 16.0, 20.0, 24.0];
 const LEVEL_DOT_SPACINGS: [f64; 4] = [2.2, 2.0, 1.85, 1.7];
+const SHEETS: usize = 4;
+pub const LEVEL_NAMES: [&str; 4] = ["trivial", "easy", "standard", "hard"];
 
 struct Slot {
     left: f64,
@@ -22,16 +24,14 @@ struct Slot {
     height: f64,
 }
 
-pub fn book(seed: u64, per_page: usize, ink: Ink) -> Vec<Vec<Mark>> {
+pub fn book(seed: u64, per_page: usize, level: Option<usize>, ink: Ink) -> Vec<Vec<Mark>> {
     let slots = slots(per_page);
-    let jobs: Vec<(Grid, u64)> = grids(&slots[0])
-        .into_iter()
-        .flat_map(|grid| std::iter::repeat_n(grid, per_page))
-        .zip(seed..)
+    let grids = grids(&slots[0]);
+    let levels: Vec<usize> = (0..SHEETS)
+        .flat_map(|sheet| std::iter::repeat_n(level.unwrap_or(sheet), per_page))
         .collect();
-    let spacings = LEVEL_DOT_SPACINGS
-        .into_iter()
-        .flat_map(|spacing| std::iter::repeat_n(spacing, per_page));
+    let jobs: Vec<(Grid, u64)> = levels.iter().map(|&at| grids[at]).zip(seed..).collect();
+    let spacings = levels.iter().map(|&at| LEVEL_DOT_SPACINGS[at]);
     let mazes: Vec<(Maze, f64)> = mazes(&jobs).into_iter().zip(spacings).collect();
     mazes
         .chunks(per_page)
@@ -182,7 +182,7 @@ mod tests {
 
     #[test]
     fn every_book_has_eight_pages() {
-        assert_eq!(book(0, 2, Ink::Colour).len(), 8);
+        assert_eq!(book(0, 2, None, Ink::Colour).len(), 8);
     }
 
     #[test]
@@ -223,7 +223,7 @@ mod tests {
 
     #[test]
     fn each_solution_starts_behind_its_start() {
-        let pages = book(0, 1, Ink::Colour);
+        let pages = book(0, 1, None, Ink::Colour);
         assert_eq!(pages.len(), 8);
         for sheet in pages.chunks(2) {
             let starts: Vec<Point> = sheet[0]

@@ -1,4 +1,4 @@
-use amaze::book::book;
+use amaze::book::{LEVEL_NAMES, book};
 use amaze::drawing::Ink;
 use amaze::pdf::pdf;
 use std::process::ExitCode;
@@ -24,8 +24,24 @@ fn main() -> ExitCode {
             }
         },
     };
+    let level = match args.iter().position(|arg| arg == "--level") {
+        None => None,
+        Some(at) => match args
+            .get(at + 1)
+            .and_then(|name| LEVEL_NAMES.iter().position(|level| level == name))
+        {
+            Some(level) => {
+                args.drain(at..=at + 1);
+                Some(level)
+            }
+            None => {
+                eprintln!("--level needs one of {}", LEVEL_NAMES.join(", "));
+                return ExitCode::FAILURE;
+            }
+        },
+    };
     let Some(out) = args.first() else {
-        eprintln!("usage: amaze <book.pdf> [seed] [--per-page N] [--black]");
+        eprintln!("usage: amaze <book.pdf> [seed] [--per-page N] [--level NAME] [--black]");
         return ExitCode::FAILURE;
     };
     let seed = match args.get(1).map(|seed| seed.parse::<u64>()) {
@@ -36,7 +52,7 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let pages = book(seed, per_page, ink);
+    let pages = book(seed, per_page, level, ink);
     match std::fs::write(out, pdf(&pages)) {
         Ok(()) => {
             println!("seed {seed}");
