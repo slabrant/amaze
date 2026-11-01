@@ -12,7 +12,7 @@ const MARGIN: f64 = 15.0 * MILLIMETRE;
 const GAP: f64 = 10.0 * MILLIMETRE;
 const SIDE_PER_ZONE: f64 = 4.5;
 const RETRIES: u64 = 20;
-const LEVEL_SIDES: [f64; 4] = [12.0, 16.0, 20.0, 24.0];
+const LEVEL_SIDES: [f64; 4] = [8.0, 12.0, 16.0, 20.0];
 const LEVEL_DOT_SPACINGS: [f64; 4] = [2.2, 2.0, 1.85, 1.7];
 const SHEETS: usize = 4;
 pub const LEVEL_NAMES: [&str; 4] = ["trivial", "easy", "standard", "hard"];
@@ -191,6 +191,10 @@ mod tests {
             levels(2),
             [
                 Grid {
+                    width: 9,
+                    height: 6
+                },
+                Grid {
                     width: 15,
                     height: 10
                 },
@@ -201,10 +205,6 @@ mod tests {
                 Grid {
                     width: 24,
                     height: 16
-                },
-                Grid {
-                    width: 29,
-                    height: 19
                 },
             ]
         );
