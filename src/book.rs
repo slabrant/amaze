@@ -128,10 +128,14 @@ fn place(maze: &Maze, marks: &[Mark], slot: &Slot, dots: f64) -> Vec<Mark> {
         .iter()
         .map(|mark| match mark.moved(scale, at) {
             Mark::Shade {
-                points, darkness, ..
+                points,
+                darkness,
+                colour,
+                ..
             } => Mark::Shade {
                 points,
                 darkness,
+                colour,
                 spacing: dots,
             },
             placed => placed,
@@ -239,17 +243,27 @@ mod tests {
                     _ => None,
                 })
                 .collect();
-            let route_points: Vec<Point> = sheet[1]
+            let shades: Vec<&Vec<Point>> = sheet[1]
                 .iter()
-                .flat_map(|mark| match mark {
-                    Mark::Lines { lines, .. } => lines.concat(),
-                    _ => Vec::new(),
+                .filter_map(|mark| match mark {
+                    Mark::Shade { points, .. } => Some(points),
+                    _ => None,
                 })
                 .collect();
             assert!(!starts.is_empty());
             for (x, y) in starts {
-                assert!(route_points.iter().any(|&(bx, by)| {
-                    (x + bx - LETTER.0).abs() < 1e-9 && (y - by).abs() < 1e-9
+                let behind = (LETTER.0 - x, y);
+                assert!(shades.iter().any(|points| {
+                    let (xs, ys): (Vec<f64>, Vec<f64>) = points.iter().copied().unzip();
+                    let low = (
+                        xs.iter().copied().fold(f64::INFINITY, f64::min),
+                        ys.iter().copied().fold(f64::INFINITY, f64::min),
+                    );
+                    let high = (
+                        xs.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+                        ys.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+                    );
+                    (low.0..=high.0).contains(&behind.0) && (low.1..=high.1).contains(&behind.1)
                 }));
             }
         }

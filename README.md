@@ -101,7 +101,7 @@ cell count, so difficulty scales with size. Near the solution is never less than
 - With no seed given, a random one is used and printed.
 - With `--black`, everything prints in black ink only: start and finish are black, and the solution is an even halftone line with no outline.
 - Grey and black are written as black ink only, so the printer does not mix them from colour inks.
-- The back shows only the solution: a thick line whose colour runs from red at the start to purple at the finish, with a gap where it goes under another path. Being mirrored, it lines up when the page is held to the light.
+- The back shows only the solution: a thick halftone line whose dots run from red at the start to purple at the finish, with a gap where it goes under another path. Being mirrored, it lines up when the page is held to the light.
 
 ## Exceptions
 
