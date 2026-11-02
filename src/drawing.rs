@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 const CORRIDOR: f64 = 0.75;
 const HALF: f64 = CORRIDOR / 2.0;
-const EDGE: f64 = 0.06;
+const EDGE: f64 = 0.04;
 const TILE_OVERLAP: f64 = 0.003;
 const SHADOW_DEPTH: f64 = 0.3;
 const SHADOW_BANDS: usize = 12;
@@ -19,7 +19,7 @@ const ARC_STEPS: usize = 6;
 const MARK: f64 = HALF;
 const ROUTE: f64 = 0.36;
 const ROUTE_GAP: f64 = 0.48;
-const ROUTE_HUES: (f64, f64) = (0.0, 0.78);
+const ROUTE_COLOURS: [Colour; 3] = [Colour::START, Colour::YELLOW, Colour::FINISH];
 const ROUTE_TONE: f64 = 0.25;
 
 pub type Point = (f64, f64);
@@ -50,51 +50,59 @@ impl Ink {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Colour {
-    pub red: f64,
-    pub green: f64,
-    pub blue: f64,
+    pub cyan: f64,
+    pub magenta: f64,
+    pub yellow: f64,
+    pub black: f64,
 }
 
 impl Colour {
     pub const BLACK: Colour = Colour::grey(0.0);
     pub const WHITE: Colour = Colour::grey(1.0);
-    pub const START: Colour = Colour {
-        red: 0.86,
-        green: 0.12,
-        blue: 0.12,
-    };
-    pub const FINISH: Colour = Colour {
-        red: 0.58,
-        green: 0.1,
-        blue: 0.86,
-    };
+    pub const CYAN: Colour = Colour::ink(1.0, 0.0, 0.0);
+    pub const MAGENTA: Colour = Colour::ink(0.0, 1.0, 0.0);
+    pub const YELLOW: Colour = Colour::ink(0.0, 0.0, 1.0);
+    pub const START: Colour = Colour::CYAN;
+    pub const FINISH: Colour = Colour::MAGENTA;
 
-    pub const fn grey(level: f64) -> Colour {
+    pub const fn ink(cyan: f64, magenta: f64, yellow: f64) -> Colour {
         Colour {
-            red: level,
-            green: level,
-            blue: level,
+            cyan,
+            magenta,
+            yellow,
+            black: 0.0,
         }
     }
 
-    pub fn hue(turn: f64) -> Colour {
-        let sector = (turn.rem_euclid(1.0)) * 6.0;
-        let rising = sector.fract();
-        let falling = 1.0 - rising;
-        let (red, green, blue) = match sector as usize {
-            0 => (1.0, rising, 0.0),
-            1 => (falling, 1.0, 0.0),
-            2 => (0.0, 1.0, rising),
-            3 => (0.0, falling, 1.0),
-            4 => (rising, 0.0, 1.0),
-            _ => (1.0, 0.0, falling),
-        };
-        let deepen = 0.85;
+    pub const fn grey(level: f64) -> Colour {
         Colour {
-            red: red * deepen,
-            green: green * deepen,
-            blue: blue * deepen,
+            cyan: 0.0,
+            magenta: 0.0,
+            yellow: 0.0,
+            black: 1.0 - level,
         }
+    }
+
+    pub fn blend(stops: &[Colour], along: f64) -> Colour {
+        let span = along.clamp(0.0, 1.0) * (stops.len() - 1) as f64;
+        let at = (span.floor() as usize).min(stops.len() - 2);
+        let (from, to, t) = (stops[at], stops[at + 1], span - at as f64);
+        let mix = |a: f64, b: f64| a + (b - a) * t;
+        Colour {
+            cyan: mix(from.cyan, to.cyan),
+            magenta: mix(from.magenta, to.magenta),
+            yellow: mix(from.yellow, to.yellow),
+            black: mix(from.black, to.black),
+        }
+    }
+
+    pub fn rgb(self) -> (f64, f64, f64) {
+        let paper = 1.0 - self.black;
+        (
+            (1.0 - self.cyan) * paper,
+            (1.0 - self.magenta) * paper,
+            (1.0 - self.yellow) * paper,
+        )
     }
 }
 
@@ -386,9 +394,7 @@ pub fn draw_solution(maze: &Maze, ink: Ink) -> Vec<Mark> {
         .map(|(i, (id, edge))| {
             let along = i.div_ceil(2) as f64;
             let colour = match ink {
-                Ink::Colour => {
-                    Colour::hue(ROUTE_HUES.0 + (ROUTE_HUES.1 - ROUTE_HUES.0) * along / last)
-                }
+                Ink::Colour => Colour::blend(&ROUTE_COLOURS, along / last),
                 Ink::Black => Colour::BLACK,
             };
             let line = half_route(maze, id, edge);
@@ -533,10 +539,17 @@ fn halftone(shades: &[(&[Point], f64, Colour)], spacing: f64) -> Vec<Mark> {
             }
         }
     }
-    let mut sizes: BTreeMap<[u64; 4], (Colour, Vec<Vec<Point>>)> = BTreeMap::new();
+    let mut sizes: BTreeMap<[u64; 5], (Colour, Vec<Vec<Point>>)> = BTreeMap::new();
     for ((i, j), (darkness, colour)) in dots {
         let at = (i as f64 * step, j as f64 * step);
-        let key = [darkness, colour.red, colour.green, colour.blue].map(f64::to_bits);
+        let key = [
+            darkness,
+            colour.cyan,
+            colour.magenta,
+            colour.yellow,
+            colour.black,
+        ]
+        .map(f64::to_bits);
         sizes
             .entry(key)
             .or_insert((colour, Vec::new()))

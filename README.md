@@ -88,8 +88,8 @@ cell count, so difficulty scales with size. Near the solution is never less than
 - Turns are rounded, inside and outside.
 - At a crossing, the top path is whole and hides the lower path.
 - A crossing where both paths run the same way: undecided (dashed edges, or a narrower top path).
-- Start: a red square with a white dot. It has no direction; the solver can set off either way.
-- Finish: a purple square with a white ring and dot.
+- Start: a cyan square with a white dot. It has no direction; the solver can set off either way.
+- Finish: a magenta square with a white ring and dot.
 - No text.
 
 ## Output
@@ -100,8 +100,8 @@ cell count, so difficulty scales with size. Near the solution is never less than
 - Each solution is printed mirrored on the back of its page.
 - With no seed given, a random one is used and printed.
 - With `--black`, everything prints in black ink only: start and finish are black, and the solution is an even halftone line with no outline.
-- Grey and black are written as black ink only, so the printer does not mix them from colour inks.
-- The back shows only the solution: a thick halftone line whose dots run from red at the start to purple at the finish, with a gap where it goes under another path. Being mirrored, it lines up when the page is held to the light.
+- Colours are written as printer inks (cyan, magenta, yellow, black). Grey and black use black ink only, and colours use no black. The solution blends between inks, so each dot is one ink's worth in all.
+- The back shows only the solution: a thick halftone line whose dots run from cyan at the start through yellow to magenta at the finish, with a gap where it goes under another path. Being mirrored, it lines up when the page is held to the light.
 
 ## Exceptions
 

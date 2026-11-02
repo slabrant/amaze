@@ -135,14 +135,14 @@ fn content(marks: &[Mark], height: f64) -> String {
 }
 
 fn paint(colour: Colour, stroke: bool) -> String {
-    let Colour { red, green, blue } = colour;
-    if red == green && green == blue {
-        let verb = if stroke { "K" } else { "k" };
-        format!("0 0 0 {:.3} {verb}", 1.0 - red)
-    } else {
-        let verb = if stroke { "RG" } else { "rg" };
-        format!("{red:.3} {green:.3} {blue:.3} {verb}")
-    }
+    let Colour {
+        cyan,
+        magenta,
+        yellow,
+        black,
+    } = colour;
+    let verb = if stroke { "K" } else { "k" };
+    format!("{cyan:.3} {magenta:.3} {yellow:.3} {black:.3} {verb}")
 }
 
 #[cfg(test)]
