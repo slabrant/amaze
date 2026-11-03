@@ -28,6 +28,7 @@ const ARC_STEPS: usize = 8;
 const RAIL_STEPS: usize = 6;
 const AROUND: usize = 32;
 const NEAR: f64 = 1e-3;
+const SIMPLIFY: f64 = 0.005;
 const ROOMIEST: f64 = 0.5;
 
 type Point = [f64; 3];
@@ -181,7 +182,7 @@ fn solve(count: usize, rules: &[Rule]) -> Result<Vec<i32>, Vec<Option<(PieceId, 
 
 fn solid(maze: &Maze) -> Manifold {
     let solids: Vec<Manifold> = shells(maze).iter().map(|shell| solid_of(shell)).collect();
-    Manifold::batch_union(&solids)
+    Manifold::batch_union(&solids).simplify(SIMPLIFY)
 }
 
 fn solid_of(shell: &[Triangle]) -> Manifold {

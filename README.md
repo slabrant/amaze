@@ -103,7 +103,7 @@ cell count, so difficulty scales with size. Near the solution is never less than
 
 `cargo run --release --bin stl -- maze.stl [seed] [width height]`
 
-Writes one maze as a solid for 3D printing, Easy size by default, 8 mm a cell.
+Writes one maze as a solid for 3D printing, Easy size by default, 8 mm a cell, and beside it a PDF of the same maze, its solution on the back.
 
 - Only the paths, standing on the print bed. No base.
 - Paths are half a cell wide, narrower than in the drawing, so there is room between crossings to climb.

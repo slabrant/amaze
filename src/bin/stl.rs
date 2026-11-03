@@ -1,5 +1,6 @@
-use amaze::book::{EASY, maze};
+use amaze::book::{EASY, maze, single};
 use amaze::grid::Grid;
+use amaze::pdf::pdf;
 use amaze::stl::stl;
 use std::process::ExitCode;
 
@@ -26,13 +27,17 @@ fn main() -> ExitCode {
         width: width as usize,
         height: height as usize,
     };
-    match std::fs::write(out, stl(&maze(grid, seed))) {
+    let maze = maze(grid, seed);
+    let page = std::path::Path::new(out).with_extension("pdf");
+    let written =
+        std::fs::write(out, stl(&maze)).and_then(|()| std::fs::write(&page, pdf(&single(&maze))));
+    match written {
         Ok(()) => {
             println!("seed {seed}");
             ExitCode::SUCCESS
         }
         Err(error) => {
-            eprintln!("could not write {out}: {error}");
+            eprintln!("could not write {out} or {}: {error}", page.display());
             ExitCode::FAILURE
         }
     }

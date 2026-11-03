@@ -108,6 +108,10 @@ pub fn two_up_book(seed: u64, per_level: usize) -> Vec<Vec<Mark>> {
         .collect()
 }
 
+pub fn single(maze: &Maze) -> Vec<Vec<Mark>> {
+    sheet(std::slice::from_ref(maze), &[whole_page()]).into()
+}
+
 fn mazes(jobs: &[(Grid, u64)]) -> Vec<Maze> {
     let next = AtomicUsize::new(0);
     let workers = std::thread::available_parallelism().map_or(1, |count| count.get());
