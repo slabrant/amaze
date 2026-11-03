@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 const MILLIMETRE: f64 = 72.0 / 25.4;
 const MARGIN: f64 = 15.0 * MILLIMETRE;
 const GAP: f64 = 10.0 * MILLIMETRE;
-const SIDE_PER_ZONE: f64 = 4.5;
+const SIDES_PER_ZONE: f64 = 5.25;
 const RETRIES: u64 = 20;
 const FIRST_SIDE: f64 = 10.0;
 const LEVEL_GROWTH: f64 = 1.6;
@@ -96,7 +96,7 @@ fn mazes(jobs: &[(Grid, u64)]) -> Vec<Maze> {
 
 pub fn zones_for(grid: Grid) -> usize {
     let side = ((grid.width * grid.height) as f64).sqrt();
-    ((side / SIDE_PER_ZONE).round() as usize).max(2)
+    (1.0 + side / SIDES_PER_ZONE).round() as usize
 }
 
 fn maze(grid: Grid, seed: u64) -> Maze {

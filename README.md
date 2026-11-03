@@ -29,6 +29,10 @@ step whose two ends join the same cell of the last zone. Steps are never undone
 or changed. Steps are made until no step is allowed, when the area is nearly
 filled. If a zone cannot be started, generation fails.
 
+A maze has one zone, plus one more for every 5.25 cells of the grid's side,
+rounded. Small mazes get more zones for their size, so their solution winds
+through more of the maze.
+
 ## Rules
 
 1. A cell has at most two paths in it.
@@ -111,7 +115,7 @@ Places where generation treats something differently from the rest.
 - The step that starts the last zone is pulled towards the start, so the finish can be near it.
 - The finish is any cell of the last zone nearly as near the start as the nearest one; of those, the one with the longest solution.
 - Start and finish cells are never made into crossings.
-- The book retries a maze that fails with another seed, and every maze has at least two zones.
+- The book retries a maze that fails with another seed.
 - Grids smaller than 4 by 4 are refused.
 
 ## Step report
