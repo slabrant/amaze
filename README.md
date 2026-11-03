@@ -64,8 +64,8 @@ and every measure is a share or a rate, so mazes of different sizes compare.
 
 Distances the goals use (near the solution, a long way round, how far zones mix,
 how near the finish must be) are shares of the grid's side, the square root of its
-cell count, so difficulty scales with size. Near the solution is never less than
-2 cells, and a long way round never shorter than the shortest circuit the rules allow.
+cell count, so difficulty scales with size. A long way round is never shorter than
+the shortest circuit the rules allow, since the rules already make every route that long.
 
 - Long way round: share of neighbouring paths whose shortest route between them is long.
 - Solution coverage: share of maze cells a few cells from the solution.
