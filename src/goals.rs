@@ -1,5 +1,5 @@
 use crate::grid::{Cell, Grid};
-use crate::maze::{Content, Maze, SHORTEST_CIRCUIT};
+use crate::maze::{Content, Maze, PieceId, SHORTEST_CIRCUIT};
 use crate::solvers::{Solver, steps_to_finish};
 use rand::prelude::*;
 
@@ -7,6 +7,7 @@ const NEAR: f64 = 0.13;
 const LONG_ROUTE: f64 = 0.53;
 const MIXING_REACH: f64 = 0.088;
 const LONG_ENOUGH: f64 = 0.2;
+const SPACING: f64 = 0.3;
 const SOLVER_RUNS: usize = 10;
 const SOLVER_PATIENCE: usize = 50;
 
@@ -16,6 +17,7 @@ pub struct Measures {
     pub solution_coverage: f64,
     pub crossings: f64,
     pub crossings_in_a_row: f64,
+    pub spacing: f64,
     pub joins_apart: f64,
     pub filling: f64,
     pub finish_near_start: f64,
@@ -48,6 +50,15 @@ pub fn measure(maze: &Maze) -> Measures {
             .count() as f64
             / cells.len() as f64,
         crossings_in_a_row: crossings_in_a_row(maze) as f64 / cells.len() as f64,
+        spacing: {
+            let stretches = stretches(maze);
+            let slack: usize = stretches
+                .lengths
+                .iter()
+                .map(|&length| beyond_spacing(maze.grid, length))
+                .sum();
+            1.0 - slack as f64 / maze_cells.len() as f64
+        },
         joins_apart: joins
             .iter()
             .enumerate()
@@ -122,6 +133,60 @@ pub fn near(grid: Grid) -> usize {
 
 pub fn long_route(grid: Grid) -> usize {
     share_of_side(grid, LONG_ROUTE).max(SHORTEST_CIRCUIT)
+}
+
+pub fn spacing(grid: Grid) -> usize {
+    share_of_side(grid, SPACING)
+}
+
+pub fn beyond_spacing(grid: Grid, length: usize) -> usize {
+    length.saturating_sub(spacing(grid))
+}
+
+pub struct Stretches {
+    pub at: Vec<Option<(usize, usize)>>,
+    pub lengths: Vec<usize>,
+}
+
+pub fn stretches(maze: &Maze) -> Stretches {
+    let plain = |id: PieceId| maze.content(maze.piece(id).cell) == Content::Path;
+    let onward = |id: PieceId, came: Option<PieceId>| {
+        maze.piece(id)
+            .links
+            .iter()
+            .map(|&(_, next)| next)
+            .find(|&next| Some(next) != came && plain(next))
+    };
+    let mut at = vec![None; maze.pieces().len()];
+    let mut lengths = Vec::new();
+    for id in 0..maze.pieces().len() {
+        if at[id].is_some() || !plain(id) {
+            continue;
+        }
+        let (mut end, mut came) = (id, None);
+        while let Some(next) = onward(end, came) {
+            if next == id {
+                break;
+            }
+            came = Some(end);
+            end = next;
+        }
+        let stretch = lengths.len();
+        let (mut here, mut came, mut length) = (end, None, 0);
+        loop {
+            at[here] = Some((stretch, length));
+            length += 1;
+            match onward(here, came) {
+                Some(next) if at[next].is_none() => {
+                    came = Some(here);
+                    here = next;
+                }
+                _ => break,
+            }
+        }
+        lengths.push(length);
+    }
+    Stretches { at, lengths }
 }
 
 pub fn long_enough(maze: &Maze) -> usize {

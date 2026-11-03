@@ -1,9 +1,14 @@
-use crate::goals::{cells_near, long_enough, long_route, zone_counts, zone_joins};
+use crate::goals::{
+    Stretches, beyond_spacing, cells_near, long_enough, long_route, stretches, zone_counts,
+    zone_joins,
+};
 use crate::grid::Cell;
 use crate::maze::{Content, Maze, PieceId, Routes, Step, StepCell};
+use std::collections::BTreeMap;
 
 pub struct Scoring {
     solution: Solution,
+    stretches: Stretches,
     counts: Vec<Vec<usize>>,
     shares: Vec<f64>,
 }
@@ -16,6 +21,7 @@ impl Scoring {
         }
         Scoring {
             solution: Solution::of(maze),
+            stretches: stretches(maze),
             counts: zone_counts(maze),
             shares: sizes
                 .iter()
@@ -30,7 +36,7 @@ impl Scoring {
 
     pub fn step(&self, maze: &Maze, step: &Step) -> Vec<f64> {
         let fair_share = 1.0 / self.shares.len() as f64;
-        let mut terms = step_terms(maze, &self.solution, &self.counts, step);
+        let mut terms = step_terms(maze, &self.solution, &self.stretches, &self.counts, step);
         terms.push(fair_share - self.shares[step.zone]);
         terms
     }
@@ -39,7 +45,7 @@ impl Scoring {
 pub const STEP_TERMS: [&str; 8] = [
     "solution coverage",
     "long way round",
-    "crossings",
+    "spacing",
     "crossings in a row",
     "filling",
     "zones mixed",
@@ -47,7 +53,7 @@ pub const STEP_TERMS: [&str; 8] = [
     "zone balance",
 ];
 
-pub const STEP_PRIORITIES: [f64; 8] = [25.0, 30.0, 10.0, 5.0, 5.0, 12.0, 25.0, 20.0];
+pub const STEP_PRIORITIES: [f64; 8] = [25.0, 30.0, 40.0, 5.0, 5.0, 12.0, 25.0, 20.0];
 
 pub const ZONE_START_TERMS: [&str; 3] = ["joins apart", "next zone room", "finish near start"];
 
@@ -174,11 +180,16 @@ fn near_fraction(near: Vec<bool>) -> f64 {
     near.iter().filter(|&&is_near| is_near).count() as f64 / near.len() as f64
 }
 
-fn step_terms(maze: &Maze, solution: &Solution, counts: &[Vec<usize>], step: &Step) -> Vec<f64> {
+fn step_terms(
+    maze: &Maze,
+    solution: &Solution,
+    stretches: &Stretches,
+    counts: &[Vec<usize>],
+    step: &Step,
+) -> Vec<f64> {
     let (near_fraction, length) = solution.after(maze, step);
     let long_enough = long_enough(maze);
     let is_crossing = |c: &StepCell| maze.content(c.cell) == Content::Path;
-    let crossings = step.cells.iter().filter(|c| is_crossing(c)).count();
     let crossings_in_a_row = step
         .cells
         .windows(2)
@@ -192,12 +203,52 @@ fn step_terms(maze: &Maze, solution: &Solution, counts: &[Vec<usize>], step: &St
     vec![
         near_fraction,
         -short_route_shortfall(maze, step),
-        crossings as f64,
+        spacing_gain(maze, stretches, step),
         crossings_in_a_row as f64,
         empty_cells as f64,
         mixing(maze, counts, step),
         -(long_enough.saturating_sub(length) as f64),
     ]
+}
+
+fn spacing_gain(maze: &Maze, stretches: &Stretches, step: &Step) -> f64 {
+    let beyond = |length: usize| beyond_spacing(maze.grid, length) as f64;
+    let mut cuts: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    let ends = [step.from, step.to];
+    let crossed = step
+        .cells
+        .iter()
+        .filter_map(|c| match maze.pieces_in(c.cell) {
+            [id] => Some(*id),
+            _ => None,
+        });
+    for id in ends.into_iter().chain(crossed) {
+        if let Some((stretch, at)) = stretches.at[id] {
+            cuts.entry(stretch).or_default().push(at);
+        }
+    }
+    let removed: f64 = cuts
+        .into_iter()
+        .map(|(stretch, mut at)| {
+            at.sort_unstable();
+            at.dedup();
+            let length = stretches.lengths[stretch];
+            let mut before = 0;
+            let mut left = 0.0;
+            for cut in at {
+                left += beyond(cut - before);
+                before = cut + 1;
+            }
+            left += beyond(length - before);
+            beyond(length) - left
+        })
+        .sum();
+    let added: f64 = step
+        .cells
+        .split(|c| maze.content(c.cell) != Content::Empty)
+        .map(|plain| beyond(plain.len()))
+        .sum();
+    removed - added
 }
 
 pub fn foreign_share(counts: &[Vec<usize>], at: usize, zone: usize) -> f64 {

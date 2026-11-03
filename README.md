@@ -9,6 +9,7 @@ Printable mazes where paths go over and under each other.
 - Joined: two neighbouring cells are joined if a path goes from one to the other.
 - Junction: a cell joined to three or four neighbours. A junction is not part of any path.
 - Path: a string of cells between junctions, each joined to the next.
+- Stretch: a string of path cells with no junction or crossing in it.
 - Maze: all the paths and junctions. A cell with no path or junction in it is empty.
 - Loop: a path whose last cell is joined to its first.
 - Crossing: a cell with two paths in it. The cell records which path is on top.
@@ -47,7 +48,7 @@ through more of the maze.
 
 1. Long way round: for two paths in the same or neighbouring cells, the shortest route between them is long.
 2. Solution coverage: most maze cells are a few cells from the solution, as the crow flies.
-3. Crossings, and crossings in a row: many crossings, including one path having several crossings one after another.
+3. Spacing, and crossings in a row: along every path, a crossing or junction comes often, so no stretch is longer than a share of the side; and one path often has several crossings one after another.
 4. Joins apart: the junctions where zones join are far apart, both as the crow flies and by route.
 5. A small number of zones.
 6. Filling: few empty cells.
@@ -74,6 +75,7 @@ the shortest circuit the rules allow, since the rules already make every route t
 - Long way round: share of neighbouring paths whose shortest route between them is long.
 - Solution coverage: share of maze cells a few cells from the solution.
 - Crossings, crossings in a row: per cell of the grid.
+- Spacing: 1 minus the share of maze cells that are beyond the spacing in their stretch.
 - Joins apart: crow-flies distance between the two nearest zone joins, as a share of the grid's side; 1 when there is only one join.
 - Filling: share of cells that are not empty.
 - Finish near start: 1 minus the start-to-finish distance as a share of the grid's diagonal.
