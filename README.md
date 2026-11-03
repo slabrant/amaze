@@ -105,14 +105,15 @@ cell count, so difficulty scales with size. Near the solution is never less than
 
 Writes one maze as a solid for 3D printing, Easy size by default, 8 mm a cell.
 
-- Only the paths, standing on the print bed, three quarters of a cell wide, their top edges rounded. No base.
-- Each path is swept smoothly from junction to junction. Turns are shaped as in the drawing: rounded inside and outside.
-- A crossing's top path is a bridge: a deck on an arch, with room underneath for the lower path.
-- Rails run along the edges of every path, where the drawing has its black edges: round the outside of turns, along the open side of junctions, and not where paths meet. A bridge's rails carry straight across; the lower path's rails stop where it goes under.
-- Heights are found for the whole maze at once: every bridge clears the path under it, and no ramp is steeper than the slope.
-- Where crossings loop back on each other too tightly for that, both paths are made narrower in those crossings, which leaves more length between crossings to climb in. Bridges are made thinner, and then ramps steeper, only if that is not enough.
+- Only the paths, standing on the print bed. No base.
+- Paths are half a cell wide, narrower than in the drawing, so there is room between crossings to climb.
+- Two levels: the ground, and a bridge's height. A path is flat on a level, and changes level only between two cells, on a ramp that fills the space between their flat parts.
+- A crossing's top path is a bridge: a deck on an arch, a level above the lower path.
+- Each piece sits on a level found for the whole maze at once, as low as it can be.
+- Turns are shaped as in the drawing: rounded inside and outside.
+- Rails run along the edges of every path, where the drawing has its black edges, each one unbroken: round the outside of turns, along the closed side of junctions, and not where paths meet. A bridge's rails carry straight across; the lower path's rails stop where it goes under.
 - Start: a raised dot. Finish: a raised ring.
-- Each path, junction, turn and mark is its own closed shape, overlapping its neighbours; slicers join them.
+- Paths, junctions, turns, rails and marks are each closed shapes, overlapping their neighbours; slicers join them.
 
 ## Exceptions
 
