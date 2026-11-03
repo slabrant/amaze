@@ -12,7 +12,6 @@ const GROUND: f64 = 2.0;
 const ROOM: f64 = 2.4;
 const DECK: f64 = 1.2;
 const STEP: f64 = ROOM + DECK;
-const PIER: f64 = 0.05;
 const RAIL: f64 = 1.2;
 const RAIL_WIDTH: f64 = 0.8;
 const RAIL_FOOT: f64 = 1.0;
@@ -288,7 +287,7 @@ fn stations(maze: &Maze, levels: &Levels, chain: &[PieceId]) -> Vec<Station> {
             at,
             along,
             half: HALF * CELL,
-            bottom: underside(maze, levels, id, s).min(top - DECK),
+            bottom: if is_bridge(maze, id) { top - DECK } else { 0.0 },
             top,
         }
     };
@@ -523,13 +522,8 @@ fn eased(x: f64) -> f64 {
     x * x * (3.0 - 2.0 * x)
 }
 
-fn underside(maze: &Maze, levels: &Levels, id: PieceId, s: f64) -> f64 {
-    if !matches!(maze.pieces_in(maze.piece(id).cell), [_, top] if *top == id) {
-        return 0.0;
-    }
-    let flat = flat(maze, id);
-    let arch = ((s - flat) / (0.5 - PIER - flat)).clamp(0.0, 1.0);
-    (mm(levels.of[id]) - DECK) * (1.0 - arch * arch).sqrt()
+fn is_bridge(maze: &Maze, id: PieceId) -> bool {
+    matches!(maze.pieces_in(maze.piece(id).cell), [_, top] if *top == id)
 }
 
 fn section(station: &Station) -> Vec<Flat> {
