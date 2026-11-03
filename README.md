@@ -108,6 +108,7 @@ Writes one maze as a solid for 3D printing, Easy size by default, 8 mm a cell.
 - Only the paths, standing on the print bed, three quarters of a cell wide, their top edges rounded. No base.
 - Each path is swept smoothly from junction to junction. Turns are shaped as in the drawing: rounded inside and outside.
 - A crossing's top path is a bridge: a deck on an arch, with room underneath for the lower path.
+- Rails run along the edges of every path, where the drawing has its black edges: round the outside of turns, along the open side of junctions, and not where paths meet. A bridge's rails carry straight across; the lower path's rails stop where it goes under.
 - Heights are found for the whole maze at once: every bridge clears the path under it, and no ramp is steeper than the slope.
 - Where crossings loop back on each other too tightly for that, both paths are made narrower in those crossings, which leaves more length between crossings to climb in. Bridges are made thinner, and then ramps steeper, only if that is not enough.
 - Start: a raised dot. Finish: a raised ring.
