@@ -88,8 +88,8 @@ cell count, so difficulty scales with size. Near the solution is never less than
 - Turns are rounded, inside and outside.
 - At a crossing, the top path is whole and hides the lower path.
 - A crossing where both paths run the same way: undecided (dashed edges, or a narrower top path).
-- Start: a cyan square with a white dot. It has no direction; the solver can set off either way.
-- Finish: a magenta square with a white ring and dot.
+- Start: a cyan halftone square with a white dot. It has no direction; the solver can set off either way.
+- Finish: a magenta halftone square with a white ring and dot.
 - No text.
 
 ## Output

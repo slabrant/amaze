@@ -21,6 +21,7 @@ const ROUTE: f64 = 0.36;
 const ROUTE_GAP: f64 = 0.48;
 const ROUTE_COLOURS: [Colour; 3] = [Colour::START, Colour::YELLOW, Colour::FINISH];
 const ROUTE_TONE: f64 = 0.25;
+const MARK_TONE: f64 = 0.6;
 
 pub type Point = (f64, f64);
 
@@ -582,13 +583,24 @@ fn inside(points: &[Point], (x, y): Point) -> bool {
 fn cell_shape(maze: &Maze, cell: Cell, colour: Colour) -> Mark {
     let ids = maze.pieces_in(cell);
     let joined = Dir::ALL.map(|dir| ids.iter().any(|&id| maze.piece(id).has_side(dir)));
-    Mark::Polygon {
+    Mark::Shade {
         points: ring(cell, joined)
             .into_iter()
             .map(|(point, _)| point)
             .collect(),
+        darkness: MARK_TONE,
         colour,
+        spacing: DOT_SPACING,
     }
+}
+
+fn circle((x, y): Point, radius: f64) -> Vec<Point> {
+    (0..4 * ARC_STEPS)
+        .map(|step| {
+            let angle = std::f64::consts::TAU * step as f64 / (4 * ARC_STEPS) as f64;
+            (x + radius * angle.cos(), y + radius * angle.sin())
+        })
+        .collect()
 }
 
 fn start_mark(maze: &Maze, cell: Cell, colour: Colour) -> Vec<Mark> {
@@ -612,10 +624,11 @@ fn finish_mark(maze: &Maze, cell: Cell, colour: Colour) -> Vec<Mark> {
             radius: MARK * 0.7,
             colour: Colour::WHITE,
         },
-        Mark::Disc {
-            centre: at,
-            radius: MARK * 0.5,
+        Mark::Shade {
+            points: circle(at, MARK * 0.5),
+            darkness: MARK_TONE,
             colour,
+            spacing: DOT_SPACING,
         },
         Mark::Disc {
             centre: at,
