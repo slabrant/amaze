@@ -12,7 +12,8 @@ const MARGIN: f64 = 15.0 * MILLIMETRE;
 const GAP: f64 = 10.0 * MILLIMETRE;
 const SIDE_PER_ZONE: f64 = 4.5;
 const RETRIES: u64 = 20;
-const LEVEL_SIDES: [f64; 4] = [8.0, 12.0, 16.0, 20.0];
+const FIRST_SIDE: f64 = 10.0;
+const LEVEL_GROWTH: f64 = 1.6;
 const LEVEL_DOT_SPACINGS: [f64; 4] = [2.2, 2.0, 1.85, 1.7];
 const SHEETS: usize = 4;
 pub const LEVEL_NAMES: [&str; 4] = ["trivial", "easy", "standard", "hard"];
@@ -47,7 +48,8 @@ fn grids(slot: &Slot) -> [Grid; 4] {
     let page = whole_page();
     let (short, long) = (slot.width.min(slot.height), slot.width.max(slot.height));
     let shrink = (short / page.width.min(page.height)).sqrt();
-    LEVEL_SIDES.map(|side| {
+    [0, 1, 2, 3].map(|level| {
+        let side = FIRST_SIDE * LEVEL_GROWTH.powf(level as f64 / 2.0);
         let across = (side * shrink).round().max(4.0);
         let along = (long * across / short).floor().max(4.0);
         if slot.width <= slot.height {
@@ -195,8 +197,8 @@ mod tests {
             levels(2),
             [
                 Grid {
-                    width: 9,
-                    height: 6
+                    width: 12,
+                    height: 8
                 },
                 Grid {
                     width: 15,
