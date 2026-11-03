@@ -353,7 +353,17 @@ fn normal(a: [f64; 3], b: [f64; 3], c: [f64; 3]) -> [f64; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::book::{EASY, TRIVIAL, maze};
+    use crate::book::maze;
+    use crate::grid::Grid;
+
+    const TRIVIAL: Grid = Grid {
+        width: 12,
+        height: 15,
+    };
+    const EASY: Grid = Grid {
+        width: 16,
+        height: 20,
+    };
 
     #[test]
     fn the_print_is_one_solid() {

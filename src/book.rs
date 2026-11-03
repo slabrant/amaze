@@ -66,8 +66,9 @@ fn grids(slot: &Slot) -> [Grid; 4] {
     })
 }
 
-pub fn single(maze: &Maze) -> Vec<Vec<Mark>> {
-    sheet(std::slice::from_ref(maze), &[whole_page()]).into()
+pub fn single(maze: &Maze, level: usize, ink: Ink) -> Vec<Vec<Mark>> {
+    let page = [(maze.clone(), LEVEL_DOT_SPACINGS[level])];
+    sheet(&page, &[whole_page()], ink).into()
 }
 
 fn mazes(jobs: &[(Grid, u64)]) -> Vec<Maze> {
