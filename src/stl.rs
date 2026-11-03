@@ -1,5 +1,6 @@
 use crate::grid::{Cell, Dir};
 use crate::maze::{Maze, PieceId};
+use manifold_csg::Manifold;
 use std::collections::{HashMap, HashSet};
 use std::f64::consts::{FRAC_PI_2, PI, TAU};
 
@@ -16,14 +17,12 @@ const RAIL: f64 = 1.2;
 const RAIL_WIDTH: f64 = 0.8;
 const RAIL_FOOT: f64 = 1.0;
 const RAIL_END: f64 = 1.0;
-const TUCK: f64 = 0.01;
 const MARK: f64 = 1.0;
 const SINK: f64 = 2.0;
 const DOT: f64 = 0.9;
 const RING: (f64, f64) = (0.6, 1.1);
 const STEPS: usize = 16;
 const HALF_STEPS: usize = 8;
-const TURN_STEPS: usize = 24;
 const EDGE_STEPS: usize = 8;
 const ARC_STEPS: usize = 8;
 const RAIL_STEPS: usize = 6;
@@ -57,7 +56,15 @@ impl Levels {
 }
 
 pub fn stl(maze: &Maze) -> Vec<u8> {
-    let triangles: Vec<Triangle> = shells(maze).into_iter().flatten().collect();
+    let (points, _, corners) = solid(maze).to_mesh_f64();
+    let at = |index: u64| {
+        let i = index as usize * 3;
+        [points[i], points[i + 1], points[i + 2]]
+    };
+    let triangles: Vec<Triangle> = corners
+        .chunks(3)
+        .map(|corner| [at(corner[0]), at(corner[1]), at(corner[2])])
+        .collect();
     let mut bytes = vec![0u8; 80];
     bytes.extend((triangles.len() as u32).to_le_bytes());
     for [a, b, c] in &triangles {
@@ -75,6 +82,15 @@ pub fn stl(maze: &Maze) -> Vec<u8> {
 pub fn is_ramp(maze: &Maze, id: PieceId) -> bool {
     let piece = maze.piece(id);
     maze.pieces_in(piece.cell).len() == 1 && piece.is_straight()
+}
+
+fn bent(before: PieceId, after: PieceId, angle: f64) -> (PieceId, f64) {
+    let (toward_before, toward_after) = (TURN * (1.0 - angle.sin()), TURN * (1.0 - angle.cos()));
+    if toward_before >= toward_after {
+        (before, toward_before)
+    } else {
+        (after, toward_after)
+    }
 }
 
 fn flat(maze: &Maze, id: PieceId) -> f64 {
@@ -163,6 +179,29 @@ fn solve(count: usize, rules: &[Rule]) -> Result<Vec<i32>, Vec<Option<(PieceId, 
     }
 }
 
+fn solid(maze: &Maze) -> Manifold {
+    let solids: Vec<Manifold> = shells(maze).iter().map(|shell| solid_of(shell)).collect();
+    Manifold::batch_union(&solids)
+}
+
+fn solid_of(shell: &[Triangle]) -> Manifold {
+    let mut index: HashMap<[u64; 3], u64> = HashMap::new();
+    let mut points: Vec<f64> = Vec::new();
+    let mut corners: Vec<u64> = Vec::new();
+    for triangle in shell {
+        for point in triangle {
+            let key = point.map(f64::to_bits);
+            let next = index.len() as u64;
+            let at = *index.entry(key).or_insert_with(|| {
+                points.extend(point);
+                next
+            });
+            corners.push(at);
+        }
+    }
+    Manifold::from_mesh_f64(&points, 3, &corners).expect("every shape is a closed solid")
+}
+
 fn shells(maze: &Maze) -> Vec<Vec<Triangle>> {
     let levels = levels(maze);
     let rows = maze.grid.height as f64;
@@ -192,7 +231,7 @@ fn shells(maze: &Maze) -> Vec<Vec<Triangle>> {
         };
         if let Some(outline) = outline {
             let outline: Vec<Flat> = outline.into_iter().map(place).collect();
-            let top = height(maze, &levels, id, piece.links[0].1, 0.0) - TUCK;
+            let top = height(maze, &levels, id, piece.links[0].1, 0.0);
             shells.push(prism(&outline, 0.0, top));
         }
     }
@@ -304,31 +343,47 @@ fn stations(maze: &Maze, levels: &Levels, chain: &[PieceId]) -> Vec<Station> {
         let [before, here, after] = [window[0], window[1], window[2]];
         let (a, b) = (towards(here, before), towards(here, after));
         let centre = middle(cell(here));
-        let straight = a.0 == -b.0 && a.1 == -b.1;
-        let steps = if straight { STEPS } else { TURN_STEPS };
-        let lead = 0.5 - TURN;
-        let bend = TURN * FRAC_PI_2;
-        let length = if straight { 1.0 } else { 2.0 * lead + bend };
-        for step in 1..=steps {
-            let gone = length * step as f64 / steps as f64;
-            let (at, along) = if straight {
-                (add(centre, scale(b, gone - 0.5)), b)
-            } else if gone < lead {
-                (add(centre, scale(a, 0.5 - gone)), scale(a, -1.0))
-            } else if gone > lead + bend {
-                (add(centre, scale(b, TURN + gone - lead - bend)), b)
-            } else {
-                let angle = (gone - lead) / TURN;
-                let (cos, sin) = (angle.cos(), angle.sin());
-                let pivot = add(centre, scale(add(a, b), TURN));
-                (
-                    add(pivot, add(scale(b, -TURN * cos), scale(a, -TURN * sin))),
-                    add(scale(b, sin), scale(a, -cos)),
-                )
-            };
-            let s = gone / length - 0.5;
-            let neighbour = if s < 0.0 { before } else { after };
-            stations.push(station(here, neighbour, s.abs(), at, along));
+        if a.0 == -b.0 && a.1 == -b.1 {
+            for step in 1..=STEPS {
+                let s = step as f64 / STEPS as f64 - 0.5;
+                let neighbour = if s < 0.0 { before } else { after };
+                stations.push(station(
+                    here,
+                    neighbour,
+                    s.abs(),
+                    add(centre, scale(b, s)),
+                    b,
+                ));
+            }
+            continue;
+        }
+        for step in 1..=EDGE_STEPS {
+            let s = 0.5 - (0.5 - TURN) * step as f64 / EDGE_STEPS as f64;
+            stations.push(station(
+                here,
+                before,
+                s,
+                add(centre, scale(a, s)),
+                scale(a, -1.0),
+            ));
+        }
+        let pivot = add(centre, scale(add(a, b), TURN));
+        for step in 1..ARC_STEPS {
+            let angle = FRAC_PI_2 * step as f64 / ARC_STEPS as f64;
+            let (cos, sin) = (angle.cos(), angle.sin());
+            let at = add(pivot, add(scale(b, -TURN * cos), scale(a, -TURN * sin)));
+            let (neighbour, s) = bent(before, after, angle);
+            stations.push(station(
+                here,
+                neighbour,
+                s,
+                at,
+                add(scale(b, sin), scale(a, -cos)),
+            ));
+        }
+        for step in 0..=EDGE_STEPS {
+            let s = TURN + (0.5 - TURN) * step as f64 / EDGE_STEPS as f64;
+            stations.push(station(here, after, s, add(centre, scale(b, s)), b));
         }
     }
     let (last, before) = (chain[chain.len() - 1], chain[chain.len() - 2]);
@@ -354,7 +409,7 @@ fn edges(maze: &Maze, levels: &Levels) -> Vec<Vec<(Flat, f64, f64)>> {
                 .map(|&(_, other)| other)
         };
         let deck = match maze.pieces_in(piece.cell) {
-            [lower, upper] if *lower == id => Some(mm(levels.of[*upper]) - DECK + TUCK),
+            [lower, upper] if *lower == id => Some(mm(levels.of[*upper]) - DECK / 2.0),
             _ => None,
         };
         let along = |dir: Dir, side: Flat, s: f64| -> (Flat, f64, f64) {
@@ -384,10 +439,8 @@ fn edges(maze: &Maze, levels: &Levels) -> Vec<Vec<(Flat, f64, f64)>> {
                     .collect();
                 let pivot = add(centre, scale(add(oa, ob), TURN));
                 let radius = TURN - (HALF - r);
-                let (from, to) = (edge[edge.len() - 1].1, along(b, oa, TURN).1);
                 for step in 1..ARC_STEPS {
-                    let share = step as f64 / ARC_STEPS as f64;
-                    let angle = FRAC_PI_2 * share;
+                    let angle = FRAC_PI_2 * step as f64 / ARC_STEPS as f64;
                     let at = add(
                         pivot,
                         add(
@@ -395,7 +448,12 @@ fn edges(maze: &Maze, levels: &Levels) -> Vec<Vec<(Flat, f64, f64)>> {
                             scale(oa, -radius * angle.sin()),
                         ),
                     );
-                    let z = from + (to - from) * share;
+                    let (toward, s) = bent(
+                        neighbour(a).expect("a joined side"),
+                        neighbour(b).expect("a joined side"),
+                        angle,
+                    );
+                    let z = height(maze, levels, id, toward, s);
                     edge.push((at, z, z + RAIL));
                 }
                 edge.extend(spread(TURN, 0.5).into_iter().map(|s| along(b, oa, s)));
@@ -622,7 +680,7 @@ fn prism(outline: &[Flat], bottom: f64, top: f64) -> Vec<Triangle> {
 
 fn turned((x, y): Flat, profile: &[Flat]) -> Vec<Triangle> {
     let at = |(r, z): Flat, step: usize| {
-        let angle = TAU * step as f64 / AROUND as f64;
+        let angle = TAU * (step % AROUND) as f64 / AROUND as f64;
         [x + r * angle.cos(), y + r * angle.sin(), z]
     };
     let mut triangles = Vec::new();
@@ -706,8 +764,8 @@ mod tests {
     fn every_shell_is_closed_and_faces_out() {
         let maze = maze(TRIVIAL, 3);
         for shell in shells(&maze) {
-            let key = |p: Point| p.map(|value| (value * 1e6).round() as i64);
-            let mut edges: HashMap<([i64; 3], [i64; 3]), isize> = HashMap::new();
+            let key = |p: Point| p.map(f64::to_bits);
+            let mut edges: HashMap<([u64; 3], [u64; 3]), isize> = HashMap::new();
             for triangle in &shell {
                 for i in 0..3 {
                     let (a, b) = (key(triangle[i]), key(triangle[(i + 1) % 3]));
@@ -718,6 +776,15 @@ mod tests {
             assert!(edges.values().all(|&count| count == 0));
             let volume: f64 = shell.iter().map(|[a, b, c]| dot(*a, cross(*b, *c))).sum();
             assert!(volume > 0.0);
+        }
+    }
+
+    #[test]
+    fn the_print_is_one_solid() {
+        for (grid, seed) in [(TRIVIAL, 3), (EASY, 7)] {
+            let solid = solid(&maze(grid, seed));
+            assert!(solid.status().is_ok());
+            assert_eq!(solid.decompose().len(), 1);
         }
     }
 

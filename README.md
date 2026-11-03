@@ -113,7 +113,7 @@ Writes one maze as a solid for 3D printing, Easy size by default, 8 mm a cell.
 - Turns are shaped as in the drawing: rounded inside and outside.
 - Rails run along the edges of every path, where the drawing has its black edges, each one unbroken: round the outside of turns, along the closed side of junctions, and not where paths meet. A bridge's rails carry straight across; the lower path's rails carry on underneath, as the tunnel's walls.
 - Start: a raised dot. Finish: a raised ring.
-- Paths, junctions, turns, rails and marks are each closed shapes, overlapping their neighbours; slicers join them.
+- Paths, junctions, turns, rails and marks are each built as a closed shape, then joined into one solid, so rails are flush with the path's edges and the print has no inner faces.
 
 ## Exceptions
 
