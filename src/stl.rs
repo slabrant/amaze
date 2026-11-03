@@ -32,6 +32,7 @@ const NEAR: f64 = 1e-3;
 const ROOMIEST: f64 = 0.5;
 
 type Point = [f64; 3];
+type Post = [f64; 4];
 type Triangle = [Point; 3];
 type Flat = (f64, f64);
 type Rule = (usize, usize, i32, Option<(PieceId, PieceId)>);
@@ -195,13 +196,13 @@ fn shells(maze: &Maze) -> Vec<Vec<Triangle>> {
             shells.push(prism(&outline, 0.0, top));
         }
     }
-    let edges: Vec<Vec<Point>> = edges(maze, &levels)
+    let edges: Vec<Vec<Post>> = edges(maze, &levels)
         .into_iter()
         .map(|edge| {
             edge.into_iter()
-                .map(|(at, z)| {
+                .map(|(at, z, top)| {
                     let (x, y) = place(at);
-                    [x, y, z]
+                    [x, y, z, top]
                 })
                 .collect()
         })
@@ -340,7 +341,7 @@ fn stations(maze: &Maze, levels: &Levels, chain: &[PieceId]) -> Vec<Station> {
     stations
 }
 
-fn edges(maze: &Maze, levels: &Levels) -> Vec<Vec<(Flat, f64)>> {
+fn edges(maze: &Maze, levels: &Levels) -> Vec<Vec<(Flat, f64, f64)>> {
     let r = RAIL_WIDTH / 2.0 / CELL;
     let mut edges = Vec::new();
     for (id, piece) in maze.pieces().iter().enumerate() {
@@ -352,38 +353,32 @@ fn edges(maze: &Maze, levels: &Levels) -> Vec<Vec<(Flat, f64)>> {
                 .find(|&&(side, _)| side == dir)
                 .map(|&(_, other)| other)
         };
-        let along = |dir: Dir, side: Flat, s: f64| -> (Flat, f64) {
+        let deck = match maze.pieces_in(piece.cell) {
+            [lower, upper] if *lower == id => Some(mm(levels.of[*upper]) - DECK + TUCK),
+            _ => None,
+        };
+        let along = |dir: Dir, side: Flat, s: f64| -> (Flat, f64, f64) {
             let other = neighbour(dir).expect("an edge runs along a joined side");
             let lateral = HALF - r;
             let at = add(centre, add(scale(offset(dir), s), scale(side, lateral)));
-            (at, height(maze, levels, id, other, s))
+            let z = height(maze, levels, id, other, s);
+            let top = match deck {
+                Some(deck) if s <= HALF => deck,
+                _ => z + RAIL,
+            };
+            (at, z, top)
         };
         let spread = |from: f64, to: f64| -> Vec<f64> {
             (0..=EDGE_STEPS)
                 .map(|step| from + (to - from) * step as f64 / EDGE_STEPS as f64)
                 .collect()
         };
-        if let [lower, _] = maze.pieces_in(piece.cell)
-            && *lower == id
-        {
-            for &(dir, _) in &piece.links {
-                for side in [offset(dir.turned_left()), offset(dir.turned_right())] {
-                    edges.push(
-                        spread(0.5, HALF)
-                            .into_iter()
-                            .map(|s| along(dir, side, s))
-                            .collect(),
-                    );
-                }
-            }
-            continue;
-        }
         let joined = |dir: Dir| piece.has_side(dir);
         for (i, &a) in Dir::ALL.iter().enumerate() {
             let b = Dir::ALL[(i + 1) % 4];
             if joined(a) && joined(b) {
                 let (oa, ob) = (offset(a), offset(b));
-                let mut edge: Vec<(Flat, f64)> = spread(0.5, TURN)
+                let mut edge: Vec<(Flat, f64, f64)> = spread(0.5, TURN)
                     .into_iter()
                     .map(|s| along(a, ob, s))
                     .collect();
@@ -400,7 +395,8 @@ fn edges(maze: &Maze, levels: &Levels) -> Vec<Vec<(Flat, f64)>> {
                             scale(oa, -radius * angle.sin()),
                         ),
                     );
-                    edge.push((at, from + (to - from) * share));
+                    let z = from + (to - from) * share;
+                    edge.push((at, z, z + RAIL));
                 }
                 edge.extend(spread(TURN, 0.5).into_iter().map(|s| along(b, oa, s)));
                 edges.push(edge);
@@ -409,16 +405,16 @@ fn edges(maze: &Maze, levels: &Levels) -> Vec<Vec<(Flat, f64)>> {
                 let (p, q) = (a.opposite(), b.opposite());
                 let (op, oq) = (offset(p), offset(q));
                 let level = height(maze, levels, id, neighbour(p).expect("a turn"), 0.0);
-                let wall = |dir: Dir, side: Flat, u: f64| -> (Flat, f64) {
+                let wall = |dir: Dir, side: Flat, u: f64| -> (Flat, f64, f64) {
                     if u >= 0.0 {
                         along(dir, side, u)
                     } else {
                         let at = add(centre, add(scale(offset(dir), u), scale(side, HALF - r)));
-                        (at, level)
+                        (at, level, level + RAIL)
                     }
                 };
                 let start = -(HALF - OUTER_ROUNDING);
-                let mut edge: Vec<(Flat, f64)> = spread(0.5, start)
+                let mut edge: Vec<(Flat, f64, f64)> = spread(0.5, start)
                     .into_iter()
                     .map(|u| wall(p, scale(oq, -1.0), u))
                     .collect();
@@ -433,7 +429,7 @@ fn edges(maze: &Maze, levels: &Levels) -> Vec<Vec<(Flat, f64)>> {
                             scale(op, -radius * angle.sin()),
                         ),
                     );
-                    edge.push((at, level));
+                    edge.push((at, level, level + RAIL));
                 }
                 edge.extend(
                     spread(start, 0.5)
@@ -447,7 +443,7 @@ fn edges(maze: &Maze, levels: &Levels) -> Vec<Vec<(Flat, f64)>> {
             let (left, right) = (d.turned_left(), d.turned_right());
             if !joined(d) && joined(left) && joined(right) {
                 let side = offset(d);
-                let mut edge: Vec<(Flat, f64)> = spread(0.5, 0.0)
+                let mut edge: Vec<(Flat, f64, f64)> = spread(0.5, 0.0)
                     .into_iter()
                     .map(|s| along(left, side, s))
                     .collect();
@@ -464,8 +460,8 @@ fn edges(maze: &Maze, levels: &Levels) -> Vec<Vec<(Flat, f64)>> {
     edges
 }
 
-fn joined(edges: Vec<Vec<Point>>) -> Vec<(Vec<Point>, bool)> {
-    let key = |p: Point| ((p[0] / NEAR).round() as i64, (p[1] / NEAR).round() as i64);
+fn joined(edges: Vec<Vec<Post>>) -> Vec<(Vec<Post>, bool)> {
+    let key = |p: Post| ((p[0] / NEAR).round() as i64, (p[1] / NEAR).round() as i64);
     let mut ends: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
     for (i, edge) in edges.iter().enumerate() {
         ends.entry(key(edge[0])).or_default().push(i);
@@ -553,14 +549,8 @@ fn sweep(stations: &[Station]) -> Vec<Triangle> {
     loft(&rings, false)
 }
 
-fn ridge(points: &[Point], closed: bool) -> Vec<Triangle> {
+fn ridge(points: &[Post], closed: bool) -> Vec<Triangle> {
     let r = RAIL_WIDTH / 2.0;
-    let mut profile = vec![(r, -RAIL_FOOT)];
-    for step in 0..=RAIL_STEPS {
-        let angle = PI * step as f64 / RAIL_STEPS as f64;
-        profile.push((r * angle.cos(), RAIL - r + r * angle.sin()));
-    }
-    profile.push((-r, -RAIL_FOOT));
     let count = points.len();
     let mut gone = vec![0.0; count];
     for i in 1..count {
@@ -583,10 +573,17 @@ fn ridge(points: &[Point], closed: bool) -> Vec<Triangle> {
             } else {
                 eased((gone[i].min(total - gone[i]) / RAIL_END).clamp(0.0, 1.0))
             };
-            let [x, y, z] = points[i];
+            let [x, y, z, top] = points[i];
+            let tall = (top - z) * rise;
+            let mut profile = vec![(r, -RAIL_FOOT)];
+            for step in 0..=RAIL_STEPS {
+                let angle = PI * step as f64 / RAIL_STEPS as f64;
+                profile.push((r * angle.cos(), tall - r * rise + r * rise * angle.sin()));
+            }
+            profile.push((-r, -RAIL_FOOT));
             profile
-                .iter()
-                .map(|&(l, up)| [x + nx * l, y + ny * l, z + up.min(up * rise)])
+                .into_iter()
+                .map(|(l, up)| [x + nx * l, y + ny * l, z + up])
                 .collect()
         })
         .collect();
