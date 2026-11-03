@@ -5,14 +5,19 @@ use std::f64::consts::{FRAC_PI_2, TAU};
 
 pub const CELL: f64 = 8.0;
 const HALF: f64 = 0.375;
+const INNER_ROUNDING: f64 = 0.1;
+const OUTER_ROUNDING: f64 = 0.25;
+const TURN: f64 = HALF + INNER_ROUNDING;
 const BASE: f64 = 1.5;
 const FLOOR: f64 = BASE / 2.0;
 const LOW: f64 = 2.0;
 const CLEARANCE: f64 = 1.8;
 const DECK: f64 = 1.2;
-const HIGH: f64 = LOW + CLEARANCE + DECK;
+const SLOPE: f64 = 0.5;
+const SLOPE_GROWTH: f64 = 1.25;
 const PIER: f64 = 0.05;
 const ROUNDING: f64 = 0.8;
+const TUCK: f64 = 0.01;
 const FRAME_ROUNDING: f64 = 3.0;
 const MARK: f64 = 1.0;
 const SINK: f64 = 2.0;
@@ -20,7 +25,9 @@ const DOT: f64 = 1.6;
 const RING: (f64, f64) = (1.5, 2.5);
 const STEPS: usize = 16;
 const HALF_STEPS: usize = 8;
+const TURN_STEPS: usize = 24;
 const ARC_STEPS: usize = 4;
+const CORNER_STEPS: usize = 6;
 const AROUND: usize = 32;
 
 type Point = [f64; 3];
@@ -32,6 +39,11 @@ struct Station {
     along: Flat,
     bottom: f64,
     top: f64,
+}
+
+pub struct Heights {
+    pub of: Vec<f64>,
+    pub slope: f64,
 }
 
 pub fn stl(maze: &Maze) -> Vec<u8> {
@@ -50,10 +62,50 @@ pub fn stl(maze: &Maze) -> Vec<u8> {
     bytes
 }
 
+pub fn heights(maze: &Maze) -> Heights {
+    let mut slope = SLOPE;
+    loop {
+        if let Some(of) = solve(maze, slope) {
+            return Heights { of, slope };
+        }
+        slope *= SLOPE_GROWTH;
+    }
+}
+
+fn solve(maze: &Maze, slope: f64) -> Option<Vec<f64>> {
+    let mut rules: Vec<(PieceId, PieceId, f64)> = Vec::new();
+    for (id, piece) in maze.pieces().iter().enumerate() {
+        for &(_, other) in &piece.links {
+            rules.push((id, other, -slope * CELL * run(maze, id, other)));
+        }
+    }
+    for cell in maze.grid.cells() {
+        if let [lower, upper] = maze.pieces_in(cell) {
+            rules.push((*lower, *upper, CLEARANCE + DECK));
+        }
+    }
+    let mut of = vec![LOW; maze.pieces().len()];
+    for _ in 0..=of.len() {
+        let mut changed = false;
+        for &(from, to, rise) in &rules {
+            if of[from] + rise > of[to] + 1e-9 {
+                of[to] = of[from] + rise;
+                changed = true;
+            }
+        }
+        if !changed {
+            return Some(of);
+        }
+    }
+    None
+}
+
 fn shells(maze: &Maze) -> Vec<Vec<Triangle>> {
-    let place = |(x, y): Flat| (x * CELL, (maze.grid.height as f64 - y) * CELL);
+    let heights = heights(maze);
+    let rows = maze.grid.height as f64;
+    let place = |(x, y): Flat| (x * CELL, (rows - y) * CELL);
     let mut shells = vec![plate(maze)];
-    for path in paths(maze) {
+    for path in paths(maze, &heights.of) {
         let stations: Vec<Station> = path
             .into_iter()
             .map(|station| Station {
@@ -64,22 +116,54 @@ fn shells(maze: &Maze) -> Vec<Vec<Triangle>> {
             .collect();
         shells.push(sweep(&stations));
     }
-    for cell in maze.grid.cells() {
-        if let [id] = maze.pieces_in(cell)
-            && maze.piece(*id).links.len() > 2
-        {
-            let profile = profile(0.0, HALF * CELL, FLOOR, BASE + LOW);
-            shells.push(turned(place(middle(cell)), &profile));
+    for (id, piece) in maze.pieces().iter().enumerate() {
+        let centre = middle(piece.cell);
+        let outline: Option<Vec<Flat>> = match piece.links.as_slice() {
+            [(a, _), (b, _)] if *a != b.opposite() => Some(corner(centre, *a, *b)),
+            [_, _] => None,
+            _ => Some(
+                [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)]
+                    .map(|(x, y)| add(centre, (x * HALF, y * HALF)))
+                    .to_vec(),
+            ),
+        };
+        if let Some(outline) = outline {
+            let outline: Vec<Flat> = outline.into_iter().map(place).collect();
+            shells.push(prism(&outline, FLOOR, BASE + heights.of[id] - TUCK));
         }
     }
     for (cell, (inner, outer)) in [(maze.start, (0.0, DOT)), (maze.finish, RING)] {
-        let top = BASE + middle_level(maze, cell) + MARK;
+        let top = BASE + heights.of[maze.pieces_in(cell)[0]] + MARK;
         let bottom = top - MARK - SINK;
         let mark = [(inner, bottom), (outer, bottom), (outer, top), (inner, top)];
         shells.push(turned(place(middle(cell)), &mark));
     }
     shells.iter_mut().for_each(|shell| face_out(shell));
     shells
+}
+
+fn corner(centre: Flat, a: Dir, b: Dir) -> Vec<Flat> {
+    let (a, b) = (offset(a), offset(b));
+    let at = |x: Flat| add(centre, x);
+    let inner = scale(add(a, b), HALF);
+    let outer = scale(inner, -1.0);
+    let round = add(outer, scale(add(a, b), OUTER_ROUNDING));
+    let mut outline = vec![at(add(scale(a, HALF), scale(b, -HALF)))];
+    for step in 0..=CORNER_STEPS {
+        let angle = FRAC_PI_2 * step as f64 / CORNER_STEPS as f64;
+        let (cos, sin) = (angle.cos(), angle.sin());
+        outline.push(at(add(
+            round,
+            add(
+                scale(b, -OUTER_ROUNDING * cos),
+                scale(a, -OUTER_ROUNDING * sin),
+            ),
+        )));
+    }
+    outline.push(at(add(scale(b, HALF), scale(a, -HALF))));
+    outline.push(at(add(inner, scale(a, -INNER_ROUNDING))));
+    outline.push(at(add(inner, scale(b, -INNER_ROUNDING))));
+    outline
 }
 
 fn plate(maze: &Maze) -> Vec<Triangle> {
@@ -127,7 +211,7 @@ fn plate(maze: &Maze) -> Vec<Triangle> {
     triangles
 }
 
-fn paths(maze: &Maze) -> Vec<Vec<Station>> {
+fn paths(maze: &Maze, heights: &[f64]) -> Vec<Vec<Station>> {
     let is_junction = |id: PieceId| maze.piece(id).links.len() > 2;
     let mut done: HashSet<(PieceId, PieceId)> = HashSet::new();
     let mut paths = Vec::new();
@@ -153,158 +237,149 @@ fn paths(maze: &Maze) -> Vec<Vec<Station>> {
             }
             done.insert((first, second));
             done.insert((chain[chain.len() - 1], chain[chain.len() - 2]));
-            paths.push(stations(maze, &chain));
+            paths.push(stations(maze, heights, &chain));
         }
     }
     paths
 }
 
-fn stations(maze: &Maze, chain: &[PieceId]) -> Vec<Station> {
+fn stations(maze: &Maze, heights: &[f64], chain: &[PieceId]) -> Vec<Station> {
     let cell = |id: PieceId| maze.piece(id).cell;
     let towards = |from: PieceId, to: PieceId| {
         offset(Dir::between(cell(from), cell(to)).expect("linked pieces are neighbours"))
+    };
+    let station = |id: PieceId, neighbour: PieceId, s: f64, at: Flat, along: Flat| {
+        let top = BASE + height(maze, heights, id, neighbour, s);
+        Station {
+            at,
+            along,
+            bottom: underside(maze, heights, id, s).min(top - DECK),
+            top,
+        }
     };
     let mut stations = Vec::new();
     let (first, second) = (chain[0], chain[1]);
     let out = towards(first, second);
     for step in 0..=HALF_STEPS {
         let s = 0.5 * step as f64 / HALF_STEPS as f64;
-        stations.push(station(
-            maze,
-            first,
-            second,
-            s,
-            add(middle(cell(first)), scale(out, s)),
-            out,
-        ));
+        let at = add(middle(cell(first)), scale(out, s));
+        stations.push(station(first, second, s, at, out));
     }
     for window in chain.windows(3) {
         let [before, here, after] = [window[0], window[1], window[2]];
         let (a, b) = (towards(here, before), towards(here, after));
         let centre = middle(cell(here));
         let straight = a.0 == -b.0 && a.1 == -b.1;
-        for step in 1..=STEPS {
-            let t = step as f64 / STEPS as f64;
+        let steps = if straight { STEPS } else { TURN_STEPS };
+        let lead = 0.5 - TURN;
+        let bend = TURN * FRAC_PI_2;
+        let length = if straight { 1.0 } else { 2.0 * lead + bend };
+        for step in 1..=steps {
+            let gone = length * step as f64 / steps as f64;
             let (at, along) = if straight {
-                (add(centre, scale(b, t - 0.5)), b)
+                (add(centre, scale(b, gone - 0.5)), b)
+            } else if gone < lead {
+                (add(centre, scale(a, 0.5 - gone)), scale(a, -1.0))
+            } else if gone > lead + bend {
+                (add(centre, scale(b, TURN + gone - lead - bend)), b)
             } else {
-                let corner = add(centre, scale(add(a, b), 0.5));
-                let angle = t * FRAC_PI_2;
+                let angle = (gone - lead) / TURN;
                 let (cos, sin) = (angle.cos(), angle.sin());
+                let pivot = add(centre, scale(add(a, b), TURN));
                 (
-                    add(corner, scale(add(scale(b, -cos), scale(a, -sin)), 0.5)),
+                    add(pivot, add(scale(b, -TURN * cos), scale(a, -TURN * sin))),
                     add(scale(b, sin), scale(a, -cos)),
                 )
             };
-            let s = t - 0.5;
+            let s = gone / length - 0.5;
             let neighbour = if s < 0.0 { before } else { after };
-            let mut made = station(maze, here, neighbour, s.abs(), at, along);
-            if !in_crossing(maze, here) {
-                let (from, to) = (
-                    side_level(maze, here, before),
-                    side_level(maze, here, after),
-                );
-                made.top = BASE + from + (to - from) * eased(t);
-            }
-            stations.push(made);
+            stations.push(station(here, neighbour, s.abs(), at, along));
         }
     }
     let (last, before) = (chain[chain.len() - 1], chain[chain.len() - 2]);
     let back = towards(last, before);
     for step in 1..=HALF_STEPS {
         let s = 0.5 - 0.5 * step as f64 / HALF_STEPS as f64;
-        let along = scale(back, -1.0);
-        stations.push(station(
-            maze,
-            last,
-            before,
-            s,
-            add(middle(cell(last)), scale(back, s)),
-            along,
-        ));
+        let at = add(middle(cell(last)), scale(back, s));
+        stations.push(station(last, before, s, at, scale(back, -1.0)));
     }
     stations
 }
 
-fn station(maze: &Maze, id: PieceId, neighbour: PieceId, s: f64, at: Flat, along: Flat) -> Station {
-    let top = BASE + surface(maze, id, neighbour, s);
-    Station {
-        at,
-        along,
-        bottom: underside(maze, id, s).min(top - DECK),
-        top,
-    }
-}
-
-fn middle_level(maze: &Maze, cell: Cell) -> f64 {
-    let id = maze.pieces_in(cell)[0];
-    match maze.piece(id).links.as_slice() {
-        [(_, a), (_, b)] => (side_level(maze, id, *a) + side_level(maze, id, *b)) / 2.0,
-        _ => level(maze, id),
-    }
-}
-
-fn in_crossing(maze: &Maze, id: PieceId) -> bool {
-    maze.pieces_in(maze.piece(id).cell).len() == 2
-}
-
-fn is_bridge(maze: &Maze, id: PieceId) -> bool {
-    matches!(maze.pieces_in(maze.piece(id).cell), [_, top] if *top == id)
-}
-
-fn level(maze: &Maze, id: PieceId) -> f64 {
-    if is_bridge(maze, id) { HIGH } else { LOW }
-}
-
-fn side_level(maze: &Maze, id: PieceId, other: PieceId) -> f64 {
-    let (mine, theirs) = (level(maze, id), level(maze, other));
-    if in_crossing(maze, id) && in_crossing(maze, other) {
-        (mine + theirs) / 2.0
+fn flat(maze: &Maze, id: PieceId) -> f64 {
+    let crossing = maze.pieces_in(maze.piece(id).cell).len() == 2;
+    if crossing || !maze.piece(id).is_straight() {
+        HALF
     } else {
-        mine.max(theirs)
+        0.0
     }
 }
 
-fn surface(maze: &Maze, id: PieceId, neighbour: PieceId, s: f64) -> f64 {
-    let centre = level(maze, id);
-    let flat = if in_crossing(maze, id) { HALF } else { 0.0 };
-    let share = ((s - flat) / (0.5 - flat)).clamp(0.0, 1.0);
-    centre + (side_level(maze, id, neighbour) - centre) * eased(share)
+fn run(maze: &Maze, a: PieceId, b: PieceId) -> f64 {
+    1.0 - flat(maze, a) - flat(maze, b)
 }
 
-fn eased(share: f64) -> f64 {
-    share * share * (3.0 - 2.0 * share)
+fn tangent(maze: &Maze, heights: &[f64], id: PieceId, toward: PieceId) -> f64 {
+    if flat(maze, id) > 0.0 {
+        return 0.0;
+    }
+    let Some(&(_, away)) = maze
+        .piece(id)
+        .links
+        .iter()
+        .find(|&&(_, other)| other != toward)
+    else {
+        return 0.0;
+    };
+    let ahead = (heights[toward] - heights[id]) / run(maze, id, toward);
+    let behind = (heights[id] - heights[away]) / run(maze, away, id);
+    if ahead * behind > 0.0 {
+        ahead.signum() * ahead.abs().min(behind.abs())
+    } else {
+        0.0
+    }
 }
 
-fn underside(maze: &Maze, id: PieceId, s: f64) -> f64 {
-    if !is_bridge(maze, id) {
+fn height(maze: &Maze, heights: &[f64], id: PieceId, toward: PieceId, s: f64) -> f64 {
+    let (near, far) = (flat(maze, id), flat(maze, toward));
+    let span = 1.0 - near - far;
+    if s <= near {
+        return heights[id];
+    }
+    if s >= 1.0 - far {
+        return heights[toward];
+    }
+    let x = (s - near) / span;
+    let start = tangent(maze, heights, id, toward) * span;
+    let end = -tangent(maze, heights, toward, id) * span;
+    let (x2, x3) = (x * x, x * x * x);
+    heights[id] * (2.0 * x3 - 3.0 * x2 + 1.0)
+        + start * (x3 - 2.0 * x2 + x)
+        + heights[toward] * (3.0 * x2 - 2.0 * x3)
+        + end * (x3 - x2)
+}
+
+fn underside(maze: &Maze, heights: &[f64], id: PieceId, s: f64) -> f64 {
+    if !matches!(maze.pieces_in(maze.piece(id).cell), [_, top] if *top == id) {
         return FLOOR;
     }
     let arch = ((s - HALF) / (0.5 - PIER - HALF)).clamp(0.0, 1.0);
-    FLOOR + (BASE + HIGH - DECK - FLOOR) * (1.0 - arch * arch).sqrt()
-}
-
-fn profile(inner: f64, outer: f64, bottom: f64, top: f64) -> Vec<Flat> {
-    let mut points = vec![(inner, bottom), (outer, bottom)];
-    let r = ROUNDING.min(top - bottom).min(outer - inner);
-    for step in 0..=ARC_STEPS {
-        let angle = FRAC_PI_2 * step as f64 / ARC_STEPS as f64;
-        points.push((outer - r + r * angle.cos(), top - r + r * angle.sin()));
-    }
-    points.push((inner, top));
-    points
+    FLOOR + (BASE + heights[id] - DECK - FLOOR) * (1.0 - arch * arch).sqrt()
 }
 
 fn section(station: &Station) -> Vec<Flat> {
     let half = HALF * CELL;
-    let right = profile(0.0, half, station.bottom, station.top);
-    let mut points: Vec<Flat> = right[1..right.len() - 1].to_vec();
-    points.extend(
-        right[1..right.len() - 1]
-            .iter()
-            .rev()
-            .map(|&(l, z)| (-l, z)),
-    );
+    let r = ROUNDING.min(station.top - station.bottom);
+    let mut right = vec![(half, station.bottom)];
+    for step in 0..=ARC_STEPS {
+        let angle = FRAC_PI_2 * step as f64 / ARC_STEPS as f64;
+        right.push((
+            half - r + r * angle.cos(),
+            station.top - r + r * angle.sin(),
+        ));
+    }
+    let mut points = right.clone();
+    points.extend(right.iter().rev().map(|&(l, z)| (-l, z)));
     points
 }
 
@@ -331,16 +406,73 @@ fn sweep(stations: &[Station]) -> Vec<Triangle> {
             triangles.push([a[i], b[j], b[i]]);
         }
     }
-    for (ring, flip) in [(&rings[0], true), (&rings[rings.len() - 1], false)] {
-        for i in 1..ring.len() - 1 {
-            if flip {
-                triangles.push([ring[0], ring[i + 1], ring[i]]);
-            } else {
-                triangles.push([ring[0], ring[i], ring[i + 1]]);
-            }
-        }
+    let (first, last) = (&rings[0], &rings[rings.len() - 1]);
+    for i in 1..first.len() - 1 {
+        triangles.push([first[0], first[i + 1], first[i]]);
+        triangles.push([last[0], last[i], last[i + 1]]);
     }
     triangles
+}
+
+fn prism(outline: &[Flat], bottom: f64, top: f64) -> Vec<Triangle> {
+    let r = ROUNDING.min(top - bottom);
+    let mut layers: Vec<(f64, f64)> = vec![(0.0, bottom)];
+    for step in 0..=ARC_STEPS {
+        let angle = FRAC_PI_2 * step as f64 / ARC_STEPS as f64;
+        layers.push((r - r * angle.cos(), top - r + r * angle.sin()));
+    }
+    let rings: Vec<Vec<Point>> = layers
+        .iter()
+        .map(|&(by, z)| {
+            inset(outline, by)
+                .into_iter()
+                .map(|(x, y)| [x, y, z])
+                .collect()
+        })
+        .collect();
+    let mut triangles = Vec::new();
+    for pair in rings.windows(2) {
+        let (a, b) = (&pair[0], &pair[1]);
+        for i in 0..a.len() {
+            let j = (i + 1) % a.len();
+            triangles.push([a[i], a[j], b[j]]);
+            triangles.push([a[i], b[j], b[i]]);
+        }
+    }
+    let (first, last) = (&rings[0], &rings[rings.len() - 1]);
+    for i in 1..first.len() - 1 {
+        triangles.push([first[0], first[i + 1], first[i]]);
+        triangles.push([last[0], last[i], last[i + 1]]);
+    }
+    triangles
+}
+
+fn inset(outline: &[Flat], by: f64) -> Vec<Flat> {
+    let count = outline.len();
+    let area: f64 = (0..count)
+        .map(|i| {
+            let (a, b) = (outline[i], outline[(i + 1) % count]);
+            a.0 * b.1 - b.0 * a.1
+        })
+        .sum();
+    let side = area.signum();
+    let normal = |from: Flat, to: Flat| {
+        let (dx, dy) = (to.0 - from.0, to.1 - from.1);
+        let length = (dx * dx + dy * dy).sqrt();
+        (-dy / length * side, dx / length * side)
+    };
+    (0..count)
+        .map(|i| {
+            let (before, here, after) = (
+                outline[(i + count - 1) % count],
+                outline[i],
+                outline[(i + 1) % count],
+            );
+            let (one, two) = (normal(before, here), normal(here, after));
+            let mitre = by / (1.0 + one.0 * two.0 + one.1 * two.1);
+            add(here, scale(add(one, two), mitre))
+        })
+        .collect()
 }
 
 fn turned((x, y): Flat, profile: &[Flat]) -> Vec<Triangle> {
@@ -423,7 +555,7 @@ fn unit(a: Point) -> Point {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::book::{TRIVIAL, maze};
+    use crate::book::{EASY, TRIVIAL, maze};
     use std::collections::HashMap;
 
     #[test]
@@ -446,22 +578,22 @@ mod tests {
     }
 
     #[test]
-    fn bridges_leave_room_underneath() {
-        let maze = maze(TRIVIAL, 3);
-        let [lower, upper] = *maze
-            .grid
-            .cells()
-            .map(|cell| maze.pieces_in(cell))
-            .find(|ids| ids.len() == 2)
-            .expect("a crossing")
-        else {
-            unreachable!()
-        };
-        let other = maze.piece(lower).links[0].1;
-        for s in [0.0, HALF / 2.0, HALF] {
-            let room =
-                underside(&maze, upper, s) - (BASE + surface(&maze, lower, other, s.min(HALF)));
-            assert!(room >= CLEARANCE - 1e-9);
+    fn bridges_clear_and_ramps_keep_to_the_slope() {
+        for seed in 0..4 {
+            let maze = maze(EASY, seed);
+            let heights = heights(&maze);
+            for cell in maze.grid.cells() {
+                if let [lower, upper] = maze.pieces_in(cell) {
+                    let room = heights.of[*upper] - DECK - heights.of[*lower];
+                    assert!(room >= CLEARANCE - 1e-9);
+                }
+            }
+            for (id, piece) in maze.pieces().iter().enumerate() {
+                for &(_, other) in &piece.links {
+                    let rise = (heights.of[id] - heights.of[other]).abs();
+                    assert!(rise <= heights.slope * CELL * run(&maze, id, other) + 1e-9);
+                }
+            }
         }
     }
 }
