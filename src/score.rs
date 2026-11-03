@@ -1,6 +1,6 @@
 use crate::goals::{
-    Stretches, beyond_spacing, cells_near, long_enough, long_route, stretches, zone_counts,
-    zone_joins,
+    Level, Stretches, beyond_spacing, cells_near, level, long_enough, long_route, stretches,
+    zone_counts, zone_joins,
 };
 use crate::grid::Cell;
 use crate::maze::{Content, Maze, PieceId, Routes, Step, StepCell};
@@ -46,14 +46,14 @@ pub const STEP_TERMS: [&str; 8] = [
     "solution coverage",
     "long way round",
     "spacing",
-    "crossings in a row",
+    "weaving",
     "filling",
     "zones mixed",
     "solution length",
     "zone balance",
 ];
 
-pub const STEP_PRIORITIES: [f64; 8] = [25.0, 30.0, 40.0, 5.0, 5.0, 12.0, 25.0, 20.0];
+pub const STEP_PRIORITIES: [f64; 8] = [25.0, 30.0, 40.0, 20.0, 5.0, 12.0, 25.0, 20.0];
 
 pub const ZONE_START_TERMS: [&str; 3] = ["joins apart", "next zone room", "finish near start"];
 
@@ -189,12 +189,6 @@ fn step_terms(
 ) -> Vec<f64> {
     let (near_fraction, length) = solution.after(maze, step);
     let long_enough = long_enough(maze);
-    let is_crossing = |c: &StepCell| maze.content(c.cell) == Content::Path;
-    let crossings_in_a_row = step
-        .cells
-        .windows(2)
-        .filter(|pair| is_crossing(&pair[0]) && is_crossing(&pair[1]))
-        .count();
     let empty_cells = step
         .cells
         .iter()
@@ -204,28 +198,59 @@ fn step_terms(
         near_fraction,
         -short_route_shortfall(maze, step),
         spacing_gain(maze, stretches, step),
-        crossings_in_a_row as f64,
+        weaving(maze, step) as f64,
         empty_cells as f64,
         mixing(maze, counts, step),
         -(long_enough.saturating_sub(length) as f64),
     ]
 }
 
+fn crossing_level(c: &StepCell) -> Level {
+    if c.on_top { Level::Over } else { Level::Under }
+}
+
+fn step_levels(maze: &Maze, step: &Step) -> Vec<Level> {
+    step.cells
+        .iter()
+        .map(|c| match maze.content(c.cell) {
+            Content::Empty => Level::Ground,
+            _ => crossing_level(c),
+        })
+        .collect()
+}
+
+fn crossed_level(c: &StepCell) -> Level {
+    if c.on_top { Level::Under } else { Level::Over }
+}
+
 fn spacing_gain(maze: &Maze, stretches: &Stretches, step: &Step) -> f64 {
     let beyond = |length: usize| beyond_spacing(maze.grid, length) as f64;
     let mut cuts: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
-    let ends = [step.from, step.to];
-    let crossed = step
-        .cells
-        .iter()
-        .filter_map(|c| match maze.pieces_in(c.cell) {
-            [id] => Some(*id),
-            _ => None,
-        });
-    for id in ends.into_iter().chain(crossed) {
+    let mut joined = 0.0;
+    for id in [step.from, step.to] {
         if let Some((stretch, at)) = stretches.at[id] {
             cuts.entry(stretch).or_default().push(at);
         }
+    }
+    for c in &step.cells {
+        let [id] = maze.pieces_in(c.cell) else {
+            continue;
+        };
+        if let Some((stretch, at)) = stretches.at[*id] {
+            cuts.entry(stretch).or_default().push(at);
+        }
+        let becomes = Some(crossed_level(c));
+        let beside: Vec<usize> = maze
+            .piece(*id)
+            .links
+            .iter()
+            .filter(|&&(_, next)| level(maze, next) == becomes)
+            .filter_map(|&(_, next)| {
+                stretches.at[next].map(|(stretch, _)| stretches.lengths[stretch])
+            })
+            .collect();
+        joined += beyond(1 + beside.iter().sum::<usize>())
+            - beside.iter().map(|&length| beyond(length)).sum::<f64>();
     }
     let removed: f64 = cuts
         .into_iter()
@@ -243,12 +268,38 @@ fn spacing_gain(maze: &Maze, stretches: &Stretches, step: &Step) -> f64 {
             beyond(length) - left
         })
         .sum();
-    let added: f64 = step
-        .cells
-        .split(|c| maze.content(c.cell) != Content::Empty)
-        .map(|plain| beyond(plain.len()))
+    let levels = step_levels(maze, step);
+    let added: f64 = levels
+        .chunk_by(|a, b| a == b)
+        .map(|run| beyond(run.len()))
         .sum();
-    removed - added
+    removed - added - joined
+}
+
+fn weaving(maze: &Maze, step: &Step) -> usize {
+    let woven = |a: Level, b: Level| a != b && a != Level::Ground && b != Level::Ground;
+    let levels = step_levels(maze, step);
+    let own = levels
+        .windows(2)
+        .filter(|pair| woven(pair[0], pair[1]))
+        .count();
+    let crossed: usize = step
+        .cells
+        .iter()
+        .filter_map(|c| match maze.pieces_in(c.cell) {
+            [id] => Some((*id, crossed_level(c))),
+            _ => None,
+        })
+        .map(|(id, becomes)| {
+            maze.piece(id)
+                .links
+                .iter()
+                .filter_map(|&(_, next)| level(maze, next))
+                .filter(|&beside| woven(becomes, beside))
+                .count()
+        })
+        .sum();
+    own + crossed
 }
 
 pub fn foreign_share(counts: &[Vec<usize>], at: usize, zone: usize) -> f64 {

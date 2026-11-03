@@ -636,11 +636,11 @@ mod tests {
             all.iter().map(f).sum::<f64>() / all.len() as f64
         };
         println!(
-            "long_way_round {:.2} solution_coverage {:.2} crossings {:.3} crossings_in_a_row {:.3} joins_apart {:.2} filling {:.3} finish_near_start {:.2} solution_length {:.2} zones_mixed {:.2} away_from_border {:.2} solver_effort {:.2} {:.2} {:.2} {:.2} each {:?}",
+            "long_way_round {:.2} solution_coverage {:.2} crossings {:.3} weaving {:.3} joins_apart {:.2} filling {:.3} finish_near_start {:.2} solution_length {:.2} zones_mixed {:.2} away_from_border {:.2} solver_effort {:.2} {:.2} {:.2} {:.2} each {:?}",
             average(&|m| m.long_way_round),
             average(&|m| m.solution_coverage),
             average(&|m| m.crossings),
-            average(&|m| m.crossings_in_a_row),
+            average(&|m| m.weaving),
             average(&|m| m.joins_apart),
             average(&|m| m.filling),
             average(&|m| m.finish_near_start),

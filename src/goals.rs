@@ -16,7 +16,7 @@ pub struct Measures {
     pub long_way_round: f64,
     pub solution_coverage: f64,
     pub crossings: f64,
-    pub crossings_in_a_row: f64,
+    pub weaving: f64,
     pub spacing: f64,
     pub joins_apart: f64,
     pub filling: f64,
@@ -49,7 +49,7 @@ pub fn measure(maze: &Maze) -> Measures {
             .filter(|&&cell| maze.content(cell) == Content::Crossing)
             .count() as f64
             / cells.len() as f64,
-        crossings_in_a_row: crossings_in_a_row(maze) as f64 / cells.len() as f64,
+        weaving: weaving(maze) as f64 / cells.len() as f64,
         spacing: {
             let stretches = stretches(maze);
             let slack: usize = stretches
@@ -143,24 +143,40 @@ pub fn beyond_spacing(grid: Grid, length: usize) -> usize {
     length.saturating_sub(spacing(grid))
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Level {
+    Ground,
+    Over,
+    Under,
+}
+
+pub fn level(maze: &Maze, id: PieceId) -> Option<Level> {
+    let cell = maze.piece(id).cell;
+    match maze.content(cell) {
+        Content::Path => Some(Level::Ground),
+        Content::Crossing if maze.pieces_in(cell)[1] == id => Some(Level::Over),
+        Content::Crossing => Some(Level::Under),
+        _ => None,
+    }
+}
+
 pub struct Stretches {
     pub at: Vec<Option<(usize, usize)>>,
     pub lengths: Vec<usize>,
 }
 
 pub fn stretches(maze: &Maze) -> Stretches {
-    let plain = |id: PieceId| maze.content(maze.piece(id).cell) == Content::Path;
     let onward = |id: PieceId, came: Option<PieceId>| {
         maze.piece(id)
             .links
             .iter()
             .map(|&(_, next)| next)
-            .find(|&next| Some(next) != came && plain(next))
+            .find(|&next| Some(next) != came && level(maze, next) == level(maze, id))
     };
     let mut at = vec![None; maze.pieces().len()];
     let mut lengths = Vec::new();
     for id in 0..maze.pieces().len() {
-        if at[id].is_some() || !plain(id) {
+        if at[id].is_some() || level(maze, id).is_none() {
             continue;
         }
         let (mut end, mut came) = (id, None);
@@ -252,18 +268,21 @@ fn short_routes_between_neighbours(maze: &Maze) -> f64 {
     short as f64 / pairs.max(1) as f64
 }
 
-fn crossings_in_a_row(maze: &Maze) -> usize {
+fn weaving(maze: &Maze) -> usize {
+    let woven = |a: Option<Level>, b: Option<Level>| {
+        matches!(
+            (a, b),
+            (Some(Level::Over), Some(Level::Under)) | (Some(Level::Under), Some(Level::Over))
+        )
+    };
     maze.pieces()
         .iter()
         .enumerate()
-        .filter(|(_, piece)| maze.content(piece.cell) == Content::Crossing)
         .map(|(id, piece)| {
             piece
                 .links
                 .iter()
-                .filter(|&&(_, next)| {
-                    next > id && maze.content(maze.piece(next).cell) == Content::Crossing
-                })
+                .filter(|&&(_, next)| next > id && woven(level(maze, id), level(maze, next)))
                 .count()
         })
         .sum()
