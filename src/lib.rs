@@ -8,6 +8,7 @@ pub mod pdf;
 pub mod rules;
 pub mod score;
 pub mod solvers;
+pub mod stl;
 
 #[cfg(test)]
 mod svg;

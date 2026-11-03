@@ -141,7 +141,7 @@ pub fn zones_for(grid: Grid) -> usize {
     ((side / SIDE_PER_ZONE).round() as usize).max(2)
 }
 
-fn maze(grid: Grid, seed: u64) -> Maze {
+pub fn maze(grid: Grid, seed: u64) -> Maze {
     (0..RETRIES)
         .find_map(|retry| generate(grid, seed * RETRIES + retry, zones_for(grid)).ok())
         .expect("a maze within the retries")

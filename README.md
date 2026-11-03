@@ -99,6 +99,17 @@ cell count, so difficulty scales with size. Near the solution is never less than
 - With `--two-up`, a book of two mazes to a page instead: four wide sizes, two mazes each, easiest first.
 - The back shows only the solution: a thick line whose colour runs from red at the start to purple at the finish, with a gap where it goes under another path. Being mirrored, it lines up when the page is held to the light.
 
+## STL
+
+`cargo run --release --bin stl -- maze.stl [seed] [width height]`
+
+Writes one maze as a solid for 3D printing, Easy size by default, 8 mm a cell.
+
+- A flat base, with each path raised on it, three quarters of a cell wide.
+- A crossing's top path is a bridge: a deck held up on the cell's edges, with room underneath for the lower path.
+- Paths ramp up to a bridge in the next cell. Between a bridge and a lower path in the next cell, the step is shared, half on each side.
+- Start: a raised square. Finish: a raised ring.
+
 ## Exceptions
 
 Places where generation treats something differently from the rest.
