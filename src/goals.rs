@@ -6,7 +6,6 @@ use rand::prelude::*;
 const NEAR: f64 = 0.13;
 const LONG_ROUTE: f64 = 0.53;
 const MIXING_REACH: f64 = 0.088;
-const LEAST_NEAR: usize = 2;
 const LONG_ENOUGH: f64 = 0.2;
 const SOLVER_RUNS: usize = 10;
 const SOLVER_PATIENCE: usize = 50;
@@ -118,7 +117,7 @@ pub fn share_of_side(grid: Grid, share: f64) -> usize {
 }
 
 pub fn near(grid: Grid) -> usize {
-    share_of_side(grid, NEAR).max(LEAST_NEAR)
+    share_of_side(grid, NEAR)
 }
 
 pub fn long_route(grid: Grid) -> usize {

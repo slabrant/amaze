@@ -1,80 +1,108 @@
-use crate::grid::{Cell, Dir, Grid};
+use crate::grid::{Cell, Dir};
 use crate::maze::{Maze, PieceId};
+use std::collections::BTreeMap;
 
 const CORRIDOR: f64 = 0.75;
 const HALF: f64 = CORRIDOR / 2.0;
-const EDGE: f64 = 0.06;
-const LIGHT: Point = (
-    std::f64::consts::FRAC_1_SQRT_2,
-    std::f64::consts::FRAC_1_SQRT_2,
-);
+const EDGE: f64 = 0.04;
 const TILE_OVERLAP: f64 = 0.003;
 const SHADOW_DEPTH: f64 = 0.3;
 const SHADOW_BANDS: usize = 12;
-const SUN_SIDE_SHADOW: f64 = 0.6;
 const SHADOW: f64 = 0.62;
-const BACKGROUND_SHADOW_DEPTH: f64 = 0.27;
-const BACKGROUND_SHADOW_LAYERS: usize = 8;
-const BACKGROUND_SHADOW: f64 = 0.5;
+const HALO_DEPTH: f64 = 0.25;
+const HALO_BANDS: usize = 8;
+const HALO: f64 = 0.3;
 const ROUNDING: f64 = 0.25;
 const OVERLAP: f64 = 0.02;
 const INNER_ROUNDING: f64 = 0.1;
-const FRAME_ROUNDING: f64 = ROUNDING + 0.5 - HALF;
 const ARC_STEPS: usize = 6;
 const MARK: f64 = HALF;
-const ROUTE: f64 = 0.3;
-const ROUTE_GAP: f64 = HALF + 0.08;
-const ROUTE_HUES: (f64, f64) = (0.0, 0.78);
+const ROUTE: f64 = 0.36;
+const ROUTE_GAP: f64 = 0.48;
+const ROUTE_COLOURS: [Colour; 3] = [Colour::START, Colour::YELLOW, Colour::FINISH];
+const ROUTE_TONE: f64 = 0.25;
 
 pub type Point = (f64, f64);
 
+pub const DOT_SPACING: f64 = 1.7;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Ink {
+    Colour,
+    Black,
+}
+
+impl Ink {
+    fn start(self) -> Colour {
+        match self {
+            Ink::Colour => Colour::START,
+            Ink::Black => Colour::BLACK,
+        }
+    }
+
+    fn finish(self) -> Colour {
+        match self {
+            Ink::Colour => Colour::FINISH,
+            Ink::Black => Colour::BLACK,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Colour {
-    pub red: f64,
-    pub green: f64,
-    pub blue: f64,
+    pub cyan: f64,
+    pub magenta: f64,
+    pub yellow: f64,
+    pub black: f64,
 }
 
 impl Colour {
     pub const BLACK: Colour = Colour::grey(0.0);
     pub const WHITE: Colour = Colour::grey(1.0);
-    pub const START: Colour = Colour {
-        red: 0.86,
-        green: 0.12,
-        blue: 0.12,
-    };
-    pub const FINISH: Colour = Colour {
-        red: 0.58,
-        green: 0.1,
-        blue: 0.86,
-    };
+    pub const CYAN: Colour = Colour::ink(1.0, 0.0, 0.0);
+    pub const MAGENTA: Colour = Colour::ink(0.0, 1.0, 0.0);
+    pub const YELLOW: Colour = Colour::ink(0.0, 0.0, 1.0);
+    pub const START: Colour = Colour::CYAN;
+    pub const FINISH: Colour = Colour::MAGENTA;
 
-    pub const fn grey(level: f64) -> Colour {
+    pub const fn ink(cyan: f64, magenta: f64, yellow: f64) -> Colour {
         Colour {
-            red: level,
-            green: level,
-            blue: level,
+            cyan,
+            magenta,
+            yellow,
+            black: 0.0,
         }
     }
 
-    pub fn hue(turn: f64) -> Colour {
-        let sector = (turn.rem_euclid(1.0)) * 6.0;
-        let rising = sector.fract();
-        let falling = 1.0 - rising;
-        let (red, green, blue) = match sector as usize {
-            0 => (1.0, rising, 0.0),
-            1 => (falling, 1.0, 0.0),
-            2 => (0.0, 1.0, rising),
-            3 => (0.0, falling, 1.0),
-            4 => (rising, 0.0, 1.0),
-            _ => (1.0, 0.0, falling),
-        };
-        let deepen = 0.85;
+    pub const fn grey(level: f64) -> Colour {
         Colour {
-            red: red * deepen,
-            green: green * deepen,
-            blue: blue * deepen,
+            cyan: 0.0,
+            magenta: 0.0,
+            yellow: 0.0,
+            black: 1.0 - level,
         }
+    }
+
+    pub fn blend(stops: &[Colour], along: f64) -> Colour {
+        let span = along.clamp(0.0, 1.0) * (stops.len() - 1) as f64;
+        let at = (span.floor() as usize).min(stops.len() - 2);
+        let (from, to, t) = (stops[at], stops[at + 1], span - at as f64);
+        let mix = |a: f64, b: f64| a + (b - a) * t;
+        Colour {
+            cyan: mix(from.cyan, to.cyan),
+            magenta: mix(from.magenta, to.magenta),
+            yellow: mix(from.yellow, to.yellow),
+            black: mix(from.black, to.black),
+        }
+    }
+
+    pub fn rgb(self) -> (f64, f64, f64) {
+        let paper = 1.0 - self.black;
+        (
+            (1.0 - self.cyan) * paper,
+            (1.0 - self.magenta) * paper,
+            (1.0 - self.yellow) * paper,
+        )
     }
 }
 
@@ -95,6 +123,12 @@ pub enum Mark {
     Polygon {
         points: Vec<Point>,
         colour: Colour,
+    },
+    Shade {
+        points: Vec<Point>,
+        darkness: f64,
+        colour: Colour,
+        spacing: f64,
     },
 }
 
@@ -130,13 +164,24 @@ impl Mark {
                 points: points.iter().map(|&point| place(point)).collect(),
                 colour: *colour,
             },
+            Mark::Shade {
+                points,
+                darkness,
+                colour,
+                spacing,
+            } => Mark::Shade {
+                points: points.iter().map(|&point| place(point)).collect(),
+                darkness: *darkness,
+                colour: *colour,
+                spacing: *spacing,
+            },
         }
     }
 }
 
-pub fn draw(maze: &Maze) -> Vec<Mark> {
+pub fn draw(maze: &Maze, ink: Ink) -> Vec<Mark> {
     let mut fills: Vec<Vec<Point>> = Vec::new();
-    let mut edges: Vec<Vec<Point>> = vec![frame(maze.grid)];
+    let mut edges: Vec<Vec<Point>> = Vec::new();
     let mut shading: Vec<Mark> = Vec::new();
     for cell in maze.grid.cells() {
         let ids = maze.pieces_in(cell);
@@ -182,15 +227,14 @@ pub fn draw(maze: &Maze) -> Vec<Mark> {
             edges.extend(deck_edges(cell, along));
         }
     }
-    let mut marks = background_shadow(&fills);
-    marks.extend(outside_frame(maze.grid));
+    let mut marks = halo(&edges);
     marks.extend(fills.into_iter().map(|points| Mark::Polygon {
         points,
         colour: Colour::WHITE,
     }));
     marks.extend(shading);
-    marks.extend(start_mark(maze, maze.start));
-    marks.extend(finish_mark(maze, maze.finish));
+    marks.extend(start_mark(maze, maze.start, ink.start()));
+    marks.extend(finish_mark(maze, maze.finish, ink.finish()));
     marks.push(lines(edges, EDGE, Colour::BLACK));
     marks
 }
@@ -204,28 +248,18 @@ fn offset(dir: Dir) -> Point {
     }
 }
 
-fn facing(dir: Dir) -> f64 {
-    let (dx, dy) = offset(dir);
-    dx * LIGHT.0 + dy * LIGHT.1
-}
-
 fn dip(cell: Cell, along: Dir) -> Vec<Mark> {
-    let across = along.turned_right();
-    let light_across = facing(across);
     let mut shading = Vec::new();
     for sign in [1.0, -1.0] {
-        let darkness = if sign * light_across >= 0.0 {
-            1.0 - SHADOW
-        } else {
-            (1.0 - SHADOW) * SUN_SIDE_SHADOW
-        };
         for band in 0..SHADOW_BANDS {
             let from = HALF + SHADOW_DEPTH * band as f64 / SHADOW_BANDS as f64;
             let to = HALF + SHADOW_DEPTH * (band + 1) as f64 / SHADOW_BANDS as f64 + TILE_OVERLAP;
             let fade = band as f64 / SHADOW_BANDS as f64;
-            shading.push(Mark::Polygon {
+            shading.push(Mark::Shade {
                 points: rectangle(cell, along, (-HALF, HALF), (sign * from, sign * to)),
-                colour: Colour::grey(1.0 - darkness * (1.0 - fade)),
+                darkness: (1.0 - SHADOW) * (1.0 - fade),
+                colour: Colour::BLACK,
+                spacing: DOT_SPACING,
             });
         }
     }
@@ -344,50 +378,7 @@ fn fillet(cell: Cell, a: Dir, b: Dir) -> Vec<Point> {
         .collect()
 }
 
-fn frame_corners(grid: Grid) -> [(Point, Vec<Point>); 4] {
-    let (width, height) = (grid.width as f64, grid.height as f64);
-    let r = FRAME_ROUNDING;
-    let quarter = std::f64::consts::FRAC_PI_2;
-    let arc = |(cx, cy): Point, from: f64| -> Vec<Point> {
-        (0..=ARC_STEPS)
-            .map(|step| {
-                let angle = from + quarter * step as f64 / ARC_STEPS as f64;
-                (cx + r * angle.cos(), cy + r * angle.sin())
-            })
-            .collect()
-    };
-    [
-        ((0.0, 0.0), arc((r, r), 2.0 * quarter)),
-        ((width, 0.0), arc((width - r, r), 3.0 * quarter)),
-        ((width, height), arc((width - r, height - r), 0.0)),
-        ((0.0, height), arc((r, height - r), quarter)),
-    ]
-}
-
-fn frame(grid: Grid) -> Vec<Point> {
-    let mut points: Vec<Point> = frame_corners(grid)
-        .into_iter()
-        .flat_map(|(_, arc)| arc)
-        .collect();
-    points.push(points[0]);
-    points
-}
-
-fn outside_frame(grid: Grid) -> Vec<Mark> {
-    frame_corners(grid)
-        .into_iter()
-        .map(|(corner, arc)| {
-            let mut points = vec![corner];
-            points.extend(arc);
-            Mark::Polygon {
-                points,
-                colour: Colour::WHITE,
-            }
-        })
-        .collect()
-}
-
-pub fn draw_solution(maze: &Maze) -> Vec<Mark> {
+pub fn draw_solution(maze: &Maze, ink: Ink) -> Vec<Mark> {
     let route = maze.solution();
     let halves = route.windows(2).flat_map(|pair| {
         let middle = side(
@@ -401,22 +392,78 @@ pub fn draw_solution(maze: &Maze) -> Vec<Mark> {
     halves
         .enumerate()
         .map(|(i, (id, edge))| {
-            let along = i.div_ceil(2);
-            let colour =
-                Colour::hue(ROUTE_HUES.0 + (ROUTE_HUES.1 - ROUTE_HUES.0) * along as f64 / last);
-            Mark::Lines {
-                lines: vec![half_route(maze, id, edge)],
-                width: ROUTE,
+            let along = i.div_ceil(2) as f64;
+            let colour = match ink {
+                Ink::Colour => Colour::blend(&ROUTE_COLOURS, along / last),
+                Ink::Black => Colour::BLACK,
+            };
+            let line = half_route(maze, id, edge);
+            Mark::Shade {
+                points: capsule(line[0], line[1], ROUTE / 2.0),
+                darkness: ROUTE_TONE,
                 colour,
-                dash: None,
-                round: true,
+                spacing: DOT_SPACING,
             }
         })
         .collect()
 }
 
+fn capsule(from: Point, to: Point, radius: f64) -> Vec<Point> {
+    let (u, n) = heading(from, to);
+    let mut points = vec![(from.0 + n.0 * radius, from.1 + n.1 * radius)];
+    points.extend(round_end(to, u, n, radius));
+    points.push((from.0 - n.0 * radius, from.1 - n.1 * radius));
+    points
+}
+
+fn stadium(from: Point, to: Point, radius: f64) -> Vec<Point> {
+    let (u, n) = heading(from, to);
+    let mut points = round_end(to, u, n, radius);
+    points.extend(round_end(from, (-u.0, -u.1), (-n.0, -n.1), radius));
+    points
+}
+
+fn heading(from: Point, to: Point) -> (Point, Point) {
+    let length = ((to.0 - from.0).powi(2) + (to.1 - from.1).powi(2)).sqrt();
+    let (ux, uy) = ((to.0 - from.0) / length, (to.1 - from.1) / length);
+    ((ux, uy), (-uy, ux))
+}
+
+fn round_end(at: Point, (ux, uy): Point, (nx, ny): Point, radius: f64) -> Vec<Point> {
+    (0..=2 * ARC_STEPS)
+        .map(|step| {
+            let angle = std::f64::consts::PI * step as f64 / (2 * ARC_STEPS) as f64;
+            let (along, across) = (angle.sin() * radius, angle.cos() * radius);
+            (
+                at.0 + ux * along + nx * across,
+                at.1 + uy * along + ny * across,
+            )
+        })
+        .collect()
+}
+
+fn halo(edges: &[Vec<Point>]) -> Vec<Mark> {
+    let segments: Vec<(Point, Point)> = edges
+        .iter()
+        .flat_map(|line| line.windows(2).map(|pair| (pair[0], pair[1])))
+        .filter(|&(a, b)| a != b)
+        .collect();
+    (0..HALO_BANDS)
+        .flat_map(|band| {
+            let reach = HALO_DEPTH * (band + 1) as f64 / HALO_BANDS as f64;
+            let darkness = HALO * (1.0 - band as f64 / HALO_BANDS as f64);
+            segments.iter().map(move |&(a, b)| Mark::Shade {
+                points: stadium(a, b, reach),
+                darkness,
+                colour: Colour::BLACK,
+                spacing: DOT_SPACING,
+            })
+        })
+        .collect()
+}
+
 pub fn draw_zones(maze: &Maze, colours: &[Colour]) -> Vec<Mark> {
-    let mut marks = draw(maze);
+    let mut marks = draw(maze, Ink::Colour);
     for (id, piece) in maze.pieces().iter().enumerate() {
         marks.push(lines(
             outline(maze, id),
@@ -441,22 +488,95 @@ fn half_route(maze: &Maze, id: PieceId, edge: Point) -> Vec<Point> {
     ]
 }
 
-fn background_shadow(fills: &[Vec<Point>]) -> Vec<Mark> {
-    (1..=BACKGROUND_SHADOW_LAYERS)
-        .rev()
-        .flat_map(|layer| {
-            let reach = BACKGROUND_SHADOW_DEPTH * layer as f64 / BACKGROUND_SHADOW_LAYERS as f64;
-            let fade = (layer - 1) as f64 / BACKGROUND_SHADOW_LAYERS as f64;
-            let colour = Colour::grey(BACKGROUND_SHADOW + (1.0 - BACKGROUND_SHADOW) * fade);
-            fills.iter().map(move |points| Mark::Polygon {
-                points: points
-                    .iter()
-                    .map(|&(x, y)| (x + LIGHT.0 * reach, y + LIGHT.1 * reach))
-                    .collect(),
+pub fn screen(marks: &[Mark]) -> Vec<Mark> {
+    let mut screened = Vec::new();
+    let mut shades: Vec<(&[Point], f64, Colour)> = Vec::new();
+    let mut batch = DOT_SPACING;
+    for mark in marks {
+        match mark {
+            Mark::Shade {
+                points,
+                darkness,
                 colour,
-            })
+                spacing,
+            } => {
+                if *spacing != batch {
+                    screened.extend(halftone(&shades, batch));
+                    shades.clear();
+                    batch = *spacing;
+                }
+                shades.push((points, *darkness, *colour));
+            }
+            _ => {
+                screened.extend(halftone(&shades, batch));
+                shades.clear();
+                screened.push(mark.clone());
+            }
+        }
+    }
+    screened.extend(halftone(&shades, batch));
+    screened
+}
+
+fn halftone(shades: &[(&[Point], f64, Colour)], spacing: f64) -> Vec<Mark> {
+    let step = spacing * std::f64::consts::FRAC_1_SQRT_2;
+    let mut dots: BTreeMap<(i64, i64), (f64, Colour)> = BTreeMap::new();
+    for &(points, darkness, colour) in shades {
+        let span = |axis: fn(&Point) -> f64| {
+            let low = points.iter().map(axis).fold(f64::INFINITY, f64::min);
+            let high = points.iter().map(axis).fold(f64::NEG_INFINITY, f64::max);
+            (low / step).ceil() as i64..=(high / step).floor() as i64
+        };
+        for i in span(|point| point.0) {
+            for j in span(|point| point.1) {
+                if (i + j).rem_euclid(2) == 0 && inside(points, (i as f64 * step, j as f64 * step))
+                {
+                    let dot = dots.entry((i, j)).or_insert((0.0, colour));
+                    if darkness > dot.0 {
+                        *dot = (darkness, colour);
+                    }
+                }
+            }
+        }
+    }
+    let mut sizes: BTreeMap<[u64; 5], (Colour, Vec<Vec<Point>>)> = BTreeMap::new();
+    for ((i, j), (darkness, colour)) in dots {
+        let at = (i as f64 * step, j as f64 * step);
+        let key = [
+            darkness,
+            colour.cyan,
+            colour.magenta,
+            colour.yellow,
+            colour.black,
+        ]
+        .map(f64::to_bits);
+        sizes
+            .entry(key)
+            .or_insert((colour, Vec::new()))
+            .1
+            .push(vec![at, at]);
+    }
+    sizes
+        .into_iter()
+        .map(|([darkness, ..], (colour, lines))| Mark::Lines {
+            lines,
+            width: 2.0 * spacing * (f64::from_bits(darkness) / std::f64::consts::PI).sqrt(),
+            colour,
+            dash: None,
+            round: true,
         })
         .collect()
+}
+
+fn inside(points: &[Point], (x, y): Point) -> bool {
+    let mut crossings = false;
+    for (i, &(ax, ay)) in points.iter().enumerate() {
+        let (bx, by) = points[(i + 1) % points.len()];
+        if (ay > y) != (by > y) && x < ax + (y - ay) * (bx - ax) / (by - ay) {
+            crossings = !crossings;
+        }
+    }
+    crossings
 }
 
 fn cell_shape(maze: &Maze, cell: Cell, colour: Colour) -> Mark {
@@ -471,10 +591,10 @@ fn cell_shape(maze: &Maze, cell: Cell, colour: Colour) -> Mark {
     }
 }
 
-fn start_mark(maze: &Maze, cell: Cell) -> Vec<Mark> {
+fn start_mark(maze: &Maze, cell: Cell, colour: Colour) -> Vec<Mark> {
     let at = centre(cell);
     vec![
-        cell_shape(maze, cell, Colour::START),
+        cell_shape(maze, cell, colour),
         Mark::Disc {
             centre: at,
             radius: MARK * 0.45,
@@ -483,10 +603,10 @@ fn start_mark(maze: &Maze, cell: Cell) -> Vec<Mark> {
     ]
 }
 
-fn finish_mark(maze: &Maze, cell: Cell) -> Vec<Mark> {
+fn finish_mark(maze: &Maze, cell: Cell, colour: Colour) -> Vec<Mark> {
     let at = centre(cell);
     vec![
-        cell_shape(maze, cell, Colour::FINISH),
+        cell_shape(maze, cell, colour),
         Mark::Disc {
             centre: at,
             radius: MARK * 0.7,
@@ -495,7 +615,7 @@ fn finish_mark(maze: &Maze, cell: Cell) -> Vec<Mark> {
         Mark::Disc {
             centre: at,
             radius: MARK * 0.5,
-            colour: Colour::FINISH,
+            colour,
         },
         Mark::Disc {
             centre: at,

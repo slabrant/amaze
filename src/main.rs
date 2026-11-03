@@ -1,17 +1,47 @@
-use amaze::book::{Contents, book, two_up_book};
+use amaze::book::{LEVEL_NAMES, book};
+use amaze::drawing::Ink;
 use amaze::pdf::pdf;
 use std::process::ExitCode;
 
-const PER_LEVEL: usize = 2;
-const MINIS_PER_LEVEL: usize = 3;
-const TWO_UP_PER_LEVEL: usize = 2;
-
 fn main() -> ExitCode {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
-    let two_up = args.iter().any(|arg| arg == "--two-up");
-    args.retain(|arg| arg != "--two-up");
+    let ink = if args.iter().any(|arg| arg == "--black") {
+        Ink::Black
+    } else {
+        Ink::Colour
+    };
+    args.retain(|arg| arg != "--black");
+    let per_page = match args.iter().position(|arg| arg == "--per-page") {
+        None => 1,
+        Some(at) => match args.get(at + 1).map(|count| count.parse::<usize>()) {
+            Some(Ok(count)) if count > 0 => {
+                args.drain(at..=at + 1);
+                count
+            }
+            _ => {
+                eprintln!("--per-page needs a whole number above zero");
+                return ExitCode::FAILURE;
+            }
+        },
+    };
+    let level = match args.iter().position(|arg| arg == "--level") {
+        None => None,
+        Some(at) => match args
+            .get(at + 1)
+            .and_then(|name| LEVEL_NAMES.iter().position(|level| level == name))
+        {
+            Some(level) => {
+                args.drain(at..=at + 1);
+                Some(level)
+            }
+            None => {
+                eprintln!("--level needs one of {}", LEVEL_NAMES.join(", "));
+                return ExitCode::FAILURE;
+            }
+        },
+    };
     let Some(out) = args.first() else {
-        eprintln!("usage: amaze <book.pdf> [seed] [--two-up]");
+        eprintln!("usage: amaze <book.pdf> [seed] [--per-page N] [--level NAME] [--black]");
         return ExitCode::FAILURE;
     };
     let seed = match args.get(1).map(|seed| seed.parse::<u64>()) {
@@ -22,15 +52,7 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let contents = Contents {
-        per_level: PER_LEVEL,
-        minis_per_level: MINIS_PER_LEVEL,
-    };
-    let pages = if two_up {
-        two_up_book(seed, TWO_UP_PER_LEVEL)
-    } else {
-        book(seed, &contents)
-    };
+    let pages = book(seed, per_page, level, ink);
     match std::fs::write(out, pdf(&pages)) {
         Ok(()) => {
             println!("seed {seed}");

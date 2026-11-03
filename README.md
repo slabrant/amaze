@@ -29,6 +29,10 @@ step whose two ends join the same cell of the last zone. Steps are never undone
 or changed. Steps are made until no step is allowed, when the area is nearly
 filled. If a zone cannot be started, generation fails.
 
+A maze has one zone, plus one more for every 5.25 cells of the grid's side,
+rounded. Small mazes get more zones for their size, so their solution winds
+through more of the maze.
+
 ## Rules
 
 1. A cell has at most two paths in it.
@@ -64,8 +68,8 @@ and every measure is a share or a rate, so mazes of different sizes compare.
 
 Distances the goals use (near the solution, a long way round, how far zones mix,
 how near the finish must be) are shares of the grid's side, the square root of its
-cell count, so difficulty scales with size. Near the solution is never less than
-2 cells, and a long way round never shorter than the shortest circuit the rules allow.
+cell count, so difficulty scales with size. A long way round is never shorter than
+the shortest circuit the rules allow, since the rules already make every route that long.
 
 - Long way round: share of neighbouring paths whose shortest route between them is long.
 - Solution coverage: share of maze cells a few cells from the solution.
@@ -81,23 +85,27 @@ cell count, so difficulty scales with size. Near the solution is never less than
 ## Look
 
 - Paths are white with thin black edges, about three quarters of a cell wide. No walls.
-- The space between paths is plain white, and a black line with rounded corners runs round the outside.
-- Light comes from the top left. Every path casts a soft shadow onto the background.
-- A crossing's top path is a bridge: plain white and straight. The lower path is shaded where it dips under, on both sides, more on the side away from the light.
+- The space between paths is plain white. No line runs round the outside.
+- Light comes from straight overhead. Every path casts a soft, even shadow all round it onto the background.
+- Shading is a halftone, like old comics: black dots on a slanted grid, bigger where darker. The dot size is set on the page, not by the size of the cells: 2.2 points apart for Trivial, then 2, 1.85 and 1.7 for Hard.
+- A crossing's top path is a bridge: plain white and straight. The lower path is shaded where it dips under, equally on both sides.
 - Turns are rounded, inside and outside.
 - At a crossing, the top path is whole and hides the lower path.
 - A crossing where both paths run the same way: undecided (dashed edges, or a narrower top path).
-- Start: a red square with a white dot. It has no direction; the solver can set off either way.
-- Finish: a purple square with a white ring and dot.
+- Start: a cyan square with a white dot. It has no direction; the solver can set off either way.
+- Finish: a magenta square with a white ring and dot.
 - No text.
 
 ## Output
 
-- A book: Trivial, Easy, Standard and Hard one to a page, then mini Trivial, Easy, Standard and Hard four to a page.
+- A book of eight pages: Trivial, Easy, Standard and Hard, easiest first. With `--per-page N`, N mazes to a page, so N of each level; the default is one.
+- With `--level trivial`, `easy`, `standard` or `hard`, every maze in the book is that level.
+- The page is split into the columns and rows whose slots have the longest short side. Trivial has 10 cells across the short side of a whole page, and each level after it has 1.6 times the cells of the one before. A slot has fewer, by the square root of how much smaller the slot's short side is, and as many along the long side as fit at that cell size.
 - Each solution is printed mirrored on the back of its page.
 - With no seed given, a random one is used and printed.
-- With `--two-up`, a book of two mazes to a page instead: four wide sizes, two mazes each, easiest first.
-- The back shows only the solution: a thick line whose colour runs from red at the start to purple at the finish, with a gap where it goes under another path. Being mirrored, it lines up when the page is held to the light.
+- With `--black`, everything prints in black ink only: start and finish are black, and the solution is an even halftone line with no outline.
+- Colours are written as printer inks (cyan, magenta, yellow, black). Grey and black use black ink only, and colours use no black. The solution blends between inks, so each dot is one ink's worth in all.
+- The back shows only the solution: a thick halftone line whose dots run from cyan at the start through yellow to magenta at the finish, with a gap where it goes under another path. Being mirrored, it lines up when the page is held to the light.
 
 ## STL
 
@@ -123,7 +131,7 @@ Places where generation treats something differently from the rest.
 - The step that starts the last zone is pulled towards the start, so the finish can be near it.
 - The finish is any cell of the last zone nearly as near the start as the nearest one; of those, the one with the longest solution.
 - Start and finish cells are never made into crossings.
-- The book retries a maze that fails with another seed, and every maze has at least two zones.
+- The book retries a maze that fails with another seed.
 - Grids smaller than 4 by 4 are refused.
 
 ## Step report

@@ -1,44 +1,24 @@
-use crate::drawing::{Colour, Mark, draw, draw_solution, draw_zones};
+use crate::drawing::{Colour, Ink, Mark, draw, draw_solution, draw_zones, screen};
 use crate::maze::Maze;
 use std::fmt::Write;
 
 const CELL: f64 = 20.0;
 
 const ZONE_COLOURS: [Colour; 5] = [
-    Colour {
-        red: 0.84,
-        green: 0.16,
-        blue: 0.16,
-    },
-    Colour {
-        red: 0.16,
-        green: 0.62,
-        blue: 0.56,
-    },
-    Colour {
-        red: 0.23,
-        green: 0.36,
-        blue: 0.85,
-    },
-    Colour {
-        red: 0.96,
-        green: 0.64,
-        blue: 0.38,
-    },
-    Colour {
-        red: 0.51,
-        green: 0.22,
-        blue: 0.93,
-    },
+    Colour::ink(0.0, 0.81, 0.81),
+    Colour::ink(0.74, 0.0, 0.1),
+    Colour::ink(0.73, 0.58, 0.0),
+    Colour::ink(0.0, 0.33, 0.6),
+    Colour::ink(0.45, 0.76, 0.0),
 ];
 
 pub fn render(maze: &Maze) -> String {
-    svg(maze, &draw(maze))
+    svg(maze, &draw(maze, Ink::Colour))
 }
 
 pub fn render_solution(maze: &Maze) -> String {
-    let mut marks = draw(maze);
-    marks.extend(draw_solution(maze));
+    let mut marks = draw(maze, Ink::Colour);
+    marks.extend(draw_solution(maze, Ink::Colour));
     svg(maze, &marks)
 }
 
@@ -52,8 +32,12 @@ fn svg(maze: &Maze, marks: &[Mark]) -> String {
     let mut svg = format!(
         r#"<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}"><rect width="100%" height="100%" fill="white"/>"#
     );
-    for mark in marks {
-        match mark.moved(CELL, |(x, y)| (x * CELL, y * CELL)) {
+    let placed: Vec<Mark> = marks
+        .iter()
+        .map(|mark| mark.moved(CELL, |(x, y)| (x * CELL, y * CELL)))
+        .collect();
+    for mark in screen(&placed) {
+        match mark {
             Mark::Lines {
                 lines,
                 width,
@@ -105,6 +89,7 @@ fn svg(maze: &Maze, marks: &[Mark]) -> String {
                 )
                 .unwrap();
             }
+            Mark::Shade { .. } => unreachable!("shades are screened into dots"),
         }
     }
     svg.push_str("</svg>");
@@ -113,10 +98,6 @@ fn svg(maze: &Maze, marks: &[Mark]) -> String {
 
 fn hex(colour: Colour) -> String {
     let byte = |level: f64| (level * 255.0).round() as u8;
-    format!(
-        "#{:02x}{:02x}{:02x}",
-        byte(colour.red),
-        byte(colour.green),
-        byte(colour.blue)
-    )
+    let (red, green, blue) = colour.rgb();
+    format!("#{:02x}{:02x}{:02x}", byte(red), byte(green), byte(blue))
 }
