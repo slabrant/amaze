@@ -1,6 +1,6 @@
 use crate::grid::{Cell, Dir};
 use crate::maze::{Maze, PieceId};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::f64::consts::{FRAC_PI_2, TAU};
 
 pub const CELL: f64 = 8.0;
@@ -13,8 +13,10 @@ const FLOOR: f64 = BASE / 2.0;
 const LOW: f64 = 2.0;
 const CLEARANCE: f64 = 1.8;
 const DECK: f64 = 1.2;
-const SLOPE: f64 = 0.5;
-const SLOPE_GROWTH: f64 = 1.25;
+const SLOPE: f64 = 0.75;
+const SLOPE_GROWTH: f64 = 1.1;
+const THINNEST: f64 = 1.6;
+const THINNING: f64 = 0.9;
 const PIER: f64 = 0.05;
 const ROUNDING: f64 = 0.8;
 const TUCK: f64 = 0.01;
@@ -43,7 +45,28 @@ struct Station {
 
 pub struct Heights {
     pub of: Vec<f64>,
-    pub slope: f64,
+    pub deck: Vec<f64>,
+    pub room: Vec<f64>,
+    pub slopes: HashMap<(PieceId, PieceId), f64>,
+}
+
+impl Heights {
+    pub fn slope(&self, a: PieceId, b: PieceId) -> f64 {
+        self.slopes
+            .get(&(a.min(b), a.max(b)))
+            .copied()
+            .unwrap_or(SLOPE)
+    }
+
+    pub fn steepest(&self) -> f64 {
+        self.slopes.values().copied().fold(SLOPE, f64::max)
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Rule {
+    Link(PieceId, PieceId),
+    Over(usize),
 }
 
 pub fn stl(maze: &Maze) -> Vec<u8> {
@@ -63,41 +86,98 @@ pub fn stl(maze: &Maze) -> Vec<u8> {
 }
 
 pub fn heights(maze: &Maze) -> Heights {
-    let mut slope = SLOPE;
+    let mut gaps = vec![CLEARANCE + DECK; maze.grid.width * maze.grid.height];
+    let mut slopes: HashMap<(PieceId, PieceId), f64> = HashMap::new();
     loop {
-        if let Some(of) = solve(maze, slope) {
-            return Heights { of, slope };
+        let mut rules: Vec<(PieceId, PieceId, f64, Rule)> = Vec::new();
+        for (id, piece) in maze.pieces().iter().enumerate() {
+            for &(_, other) in &piece.links {
+                let slope = slopes
+                    .get(&(id.min(other), id.max(other)))
+                    .copied()
+                    .unwrap_or(SLOPE);
+                let fall = -slope * CELL * run(maze, id, other);
+                rules.push((id, other, fall, Rule::Link(id, other)));
+            }
         }
-        slope *= SLOPE_GROWTH;
+        for cell in maze.grid.cells() {
+            if let [lower, upper] = maze.pieces_in(cell) {
+                let index = maze.grid.index(cell);
+                rules.push((*lower, *upper, gaps[index], Rule::Over(index)));
+            }
+        }
+        let cycle = match solve(maze.pieces().len(), &rules) {
+            Ok(of) => {
+                let mut deck = vec![0.0; of.len()];
+                let mut room = vec![0.0; of.len()];
+                for cell in maze.grid.cells() {
+                    if let [_, upper] = maze.pieces_in(cell) {
+                        let gap = gaps[maze.grid.index(cell)];
+                        deck[*upper] = gap * DECK / (CLEARANCE + DECK);
+                        room[*upper] = gap - deck[*upper];
+                    }
+                }
+                return Heights {
+                    of,
+                    deck,
+                    room,
+                    slopes,
+                };
+            }
+            Err(cycle) => cycle,
+        };
+        let thinnable: Vec<usize> = cycle
+            .iter()
+            .filter_map(|rule| match rule {
+                Rule::Over(index) if gaps[*index] > THINNEST + 1e-9 => Some(*index),
+                _ => None,
+            })
+            .collect();
+        if thinnable.is_empty() {
+            for rule in cycle {
+                if let Rule::Link(a, b) = rule {
+                    *slopes.entry((a.min(b), a.max(b))).or_insert(SLOPE) *= SLOPE_GROWTH;
+                }
+            }
+        } else {
+            for index in thinnable {
+                gaps[index] = (gaps[index] * THINNING).max(THINNEST);
+            }
+        }
     }
 }
 
-fn solve(maze: &Maze, slope: f64) -> Option<Vec<f64>> {
-    let mut rules: Vec<(PieceId, PieceId, f64)> = Vec::new();
-    for (id, piece) in maze.pieces().iter().enumerate() {
-        for &(_, other) in &piece.links {
-            rules.push((id, other, -slope * CELL * run(maze, id, other)));
-        }
-    }
-    for cell in maze.grid.cells() {
-        if let [lower, upper] = maze.pieces_in(cell) {
-            rules.push((*lower, *upper, CLEARANCE + DECK));
-        }
-    }
-    let mut of = vec![LOW; maze.pieces().len()];
-    for _ in 0..=of.len() {
+fn solve(count: usize, rules: &[(PieceId, PieceId, f64, Rule)]) -> Result<Vec<f64>, Vec<Rule>> {
+    let mut of = vec![LOW; count];
+    let mut came_by = vec![usize::MAX; count];
+    let mut moved = 0;
+    for _ in 0..=count {
         let mut changed = false;
-        for &(from, to, rise) in &rules {
+        for (index, &(from, to, rise, _)) in rules.iter().enumerate() {
             if of[from] + rise > of[to] + 1e-9 {
                 of[to] = of[from] + rise;
+                came_by[to] = index;
+                moved = to;
                 changed = true;
             }
         }
         if !changed {
-            return Some(of);
+            return Ok(of);
         }
     }
-    None
+    for _ in 0..count {
+        moved = rules[came_by[moved]].0;
+    }
+    let mut cycle = Vec::new();
+    let mut at = moved;
+    loop {
+        let (from, _, _, rule) = rules[came_by[at]];
+        cycle.push(rule);
+        at = from;
+        if at == moved {
+            return Err(cycle);
+        }
+    }
 }
 
 fn shells(maze: &Maze) -> Vec<Vec<Triangle>> {
@@ -105,7 +185,7 @@ fn shells(maze: &Maze) -> Vec<Vec<Triangle>> {
     let rows = maze.grid.height as f64;
     let place = |(x, y): Flat| (x * CELL, (rows - y) * CELL);
     let mut shells = vec![plate(maze)];
-    for path in paths(maze, &heights.of) {
+    for path in paths(maze, &heights) {
         let stations: Vec<Station> = path
             .into_iter()
             .map(|station| Station {
@@ -211,7 +291,7 @@ fn plate(maze: &Maze) -> Vec<Triangle> {
     triangles
 }
 
-fn paths(maze: &Maze, heights: &[f64]) -> Vec<Vec<Station>> {
+fn paths(maze: &Maze, heights: &Heights) -> Vec<Vec<Station>> {
     let is_junction = |id: PieceId| maze.piece(id).links.len() > 2;
     let mut done: HashSet<(PieceId, PieceId)> = HashSet::new();
     let mut paths = Vec::new();
@@ -243,17 +323,17 @@ fn paths(maze: &Maze, heights: &[f64]) -> Vec<Vec<Station>> {
     paths
 }
 
-fn stations(maze: &Maze, heights: &[f64], chain: &[PieceId]) -> Vec<Station> {
+fn stations(maze: &Maze, heights: &Heights, chain: &[PieceId]) -> Vec<Station> {
     let cell = |id: PieceId| maze.piece(id).cell;
     let towards = |from: PieceId, to: PieceId| {
         offset(Dir::between(cell(from), cell(to)).expect("linked pieces are neighbours"))
     };
     let station = |id: PieceId, neighbour: PieceId, s: f64, at: Flat, along: Flat| {
-        let top = BASE + height(maze, heights, id, neighbour, s);
+        let top = BASE + height(maze, &heights.of, id, neighbour, s);
         Station {
             at,
             along,
-            bottom: underside(maze, heights, id, s).min(top - DECK),
+            bottom: underside(maze, heights, id, s).min(top - heights.deck[id].max(DECK)),
             top,
         }
     };
@@ -359,12 +439,12 @@ fn height(maze: &Maze, heights: &[f64], id: PieceId, toward: PieceId, s: f64) ->
         + end * (x3 - x2)
 }
 
-fn underside(maze: &Maze, heights: &[f64], id: PieceId, s: f64) -> f64 {
+fn underside(maze: &Maze, heights: &Heights, id: PieceId, s: f64) -> f64 {
     if !matches!(maze.pieces_in(maze.piece(id).cell), [_, top] if *top == id) {
         return FLOOR;
     }
     let arch = ((s - HALF) / (0.5 - PIER - HALF)).clamp(0.0, 1.0);
-    FLOOR + (BASE + heights[id] - DECK - FLOOR) * (1.0 - arch * arch).sqrt()
+    FLOOR + (BASE + heights.of[id] - heights.deck[id] - FLOOR) * (1.0 - arch * arch).sqrt()
 }
 
 fn section(station: &Station) -> Vec<Flat> {
@@ -556,7 +636,6 @@ fn unit(a: Point) -> Point {
 mod tests {
     use super::*;
     use crate::book::{EASY, TRIVIAL, maze};
-    use std::collections::HashMap;
 
     #[test]
     fn every_shell_is_closed_and_faces_out() {
@@ -584,14 +663,15 @@ mod tests {
             let heights = heights(&maze);
             for cell in maze.grid.cells() {
                 if let [lower, upper] = maze.pieces_in(cell) {
-                    let room = heights.of[*upper] - DECK - heights.of[*lower];
-                    assert!(room >= CLEARANCE - 1e-9);
+                    let room = heights.of[*upper] - heights.deck[*upper] - heights.of[*lower];
+                    assert!(room >= heights.room[*upper] - 1e-9);
+                    assert!(heights.room[*upper] + heights.deck[*upper] >= THINNEST - 1e-9);
                 }
             }
             for (id, piece) in maze.pieces().iter().enumerate() {
                 for &(_, other) in &piece.links {
                     let rise = (heights.of[id] - heights.of[other]).abs();
-                    assert!(rise <= heights.slope * CELL * run(&maze, id, other) + 1e-9);
+                    assert!(rise <= heights.slope(id, other) * CELL * run(&maze, id, other) + 1e-9);
                 }
             }
         }

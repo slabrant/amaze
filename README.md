@@ -106,11 +106,12 @@ cell count, so difficulty scales with size. Near the solution is never less than
 Writes one maze as a solid for 3D printing, Easy size by default, 8 mm a cell.
 
 - A flat base with rounded corners, with each path raised on it, three quarters of a cell wide, its top edges rounded.
-- Each path is swept smoothly from junction to junction. Turns are quarter circles.
+- Each path is swept smoothly from junction to junction. Turns are shaped as in the drawing: rounded inside and outside.
 - A crossing's top path is a bridge: a deck on an arch, with room underneath for the lower path.
-- Paths ramp smoothly up to a bridge across the next cell, and stay up between two bridges. Between a bridge and a lower path in the next cell, the ramp is shared, half on each side.
+- Heights are found for the whole maze at once: every bridge clears the path under it, and no ramp is steeper than the slope.
+- Where crossings loop back on each other too tightly for that, those bridges are made thinner, down to a least thickness, and only then are those ramps made steeper.
 - Start: a raised dot. Finish: a raised ring.
-- Each path, junction and mark is its own closed shape, overlapping the base; slicers join them.
+- Each path, junction, turn and mark is its own closed shape, overlapping the base; slicers join them.
 
 ## Exceptions
 
