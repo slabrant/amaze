@@ -234,7 +234,7 @@ mod tests {
                 .windows(2)
                 .filter_map(|pair| match pair {
                     [
-                        Mark::Shade {
+                        Mark::Polygon {
                             colour: Colour::START,
                             ..
                         },
