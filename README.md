@@ -43,6 +43,7 @@ through more of the maze.
 5. No dead ends.
 6. Both paths go straight through a crossing.
 7. Every step's circuit is at least 8 cells.
+8. A path never crosses two paths in a row at the same level: after going over one, it goes under the next, and after going under one, it goes over the next.
 
 ## Goals
 

@@ -6,6 +6,7 @@ pub enum Broken {
     TooManyPaths(Cell),
     JunctionCrossed(Cell),
     TurnInCrossing(Cell),
+    SameLevelInARow(Cell),
     NoRouteToStart(Cell),
     ZonesJoinedOutOfOrder(Cell),
     ZonesNotJoinedAtOneJunction(usize),
@@ -36,6 +37,14 @@ pub fn broken(maze: &Maze) -> Vec<Broken> {
         }
         if piece.links.len() < 2 {
             found.push(Broken::DeadEnd(piece.cell));
+        }
+        if let Some(on_top) = maze.on_top(id)
+            && piece
+                .links
+                .iter()
+                .any(|&(_, next)| maze.on_top(next) == Some(on_top))
+        {
+            found.push(Broken::SameLevelInARow(piece.cell));
         }
     }
     if maze.content(maze.start) == Content::Empty {

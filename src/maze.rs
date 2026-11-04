@@ -1,5 +1,5 @@
 use crate::grid::{Cell, Dir, Grid};
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 pub type PieceId = usize;
 
@@ -54,6 +54,7 @@ pub enum StepError {
     EndNotJoinable,
     SideTaken,
     TurnInCrossing,
+    SameLevelInARow,
     WrongZone,
     CircuitTooShort,
 }
@@ -132,6 +133,13 @@ impl Maze {
 
     pub fn pieces_in(&self, cell: Cell) -> &[PieceId] {
         &self.layers[self.grid.index(cell)]
+    }
+
+    pub fn on_top(&self, id: PieceId) -> Option<bool> {
+        match self.pieces_in(self.pieces[id].cell) {
+            [_, top] => Some(*top == id),
+            _ => None,
+        }
     }
 
     pub fn content(&self, cell: Cell) -> Content {
@@ -228,6 +236,28 @@ impl Maze {
                     == Dir::between(c.cell, route[i + 2]);
                 if !goes_straight || !self.pieces[*crossed].is_straight() {
                     return Err(StepError::TurnInCrossing);
+                }
+            }
+        }
+        let crossing = |c: &StepCell| self.content(c.cell) == Content::Path;
+        if step.cells.windows(2).any(|pair| {
+            crossing(&pair[0]) && crossing(&pair[1]) && pair[0].on_top == pair[1].on_top
+        }) {
+            return Err(StepError::SameLevelInARow);
+        }
+        let crossed: HashMap<PieceId, bool> = step
+            .cells
+            .iter()
+            .filter_map(|c| match self.pieces_in(c.cell) {
+                [id] => Some((*id, !c.on_top)),
+                _ => None,
+            })
+            .collect();
+        for (&id, &on_top) in &crossed {
+            for &(_, next) in &self.pieces[id].links {
+                let next_on_top = crossed.get(&next).copied().or_else(|| self.on_top(next));
+                if next_on_top == Some(on_top) {
+                    return Err(StepError::SameLevelInARow);
                 }
             }
         }
