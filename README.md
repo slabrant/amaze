@@ -9,6 +9,7 @@ Printable mazes where paths go over and under each other.
 - Joined: two neighbouring cells are joined if a path goes from one to the other.
 - Junction: a cell joined to three or four neighbours. A junction is not part of any path.
 - Path: a string of cells between junctions, each joined to the next.
+- Hole: background sealed in by paths, with no way to the edge of the grid.
 - Stretch: a string of path cells that stay at one level, all on the ground, all over or all under, with no junction.
 - Maze: all the paths and junctions. A cell with no path or junction in it is empty.
 - Loop: a path whose last cell is joined to its first.
@@ -90,6 +91,7 @@ the shortest circuit the rules allow, since the rules already make every route t
 - Paths are white with thin black edges, about three quarters of a cell wide. No walls.
 - The space between paths is plain white. No line runs round the outside.
 - Light comes from straight overhead. Every path casts a soft, even shadow all round it onto the background.
+- Holes are shaded dark, so a narrow hole reads as wall and never as a path.
 - Shading is a halftone, like old comics: black dots on a slanted grid, bigger where darker. The dot size is set on the page, not by the size of the cells: 2.2 points apart for Trivial, then 2, 1.85 and 1.7 for Hard.
 - A crossing's top path is a bridge: plain white and straight. The lower path is shaded where it dips under, equally on both sides.
 - Turns are rounded, inside and outside.

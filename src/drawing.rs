@@ -1,3 +1,4 @@
+use crate::goals::holes;
 use crate::grid::{Cell, Dir};
 use crate::maze::{Maze, PieceId};
 use std::collections::BTreeMap;
@@ -12,6 +13,7 @@ const SHADOW: f64 = 0.62;
 const HALO_DEPTH: f64 = 0.25;
 const HALO_BANDS: usize = 8;
 const HALO: f64 = 0.3;
+const HOLE: f64 = 0.6;
 const ROUNDING: f64 = 0.25;
 const OVERLAP: f64 = 0.02;
 const INNER_ROUNDING: f64 = 0.1;
@@ -228,6 +230,7 @@ pub fn draw(maze: &Maze, ink: Ink) -> Vec<Mark> {
         }
     }
     let mut marks = halo(&edges);
+    marks.extend(filled_holes(maze));
     marks.extend(fills.into_iter().map(|points| Mark::Polygon {
         points,
         colour: Colour::WHITE,
@@ -438,6 +441,27 @@ fn round_end(at: Point, (ux, uy): Point, (nx, ny): Point, radius: f64) -> Vec<Po
                 at.0 + ux * along + nx * across,
                 at.1 + uy * along + ny * across,
             )
+        })
+        .collect()
+}
+
+fn filled_holes(maze: &Maze) -> Vec<Mark> {
+    holes(maze)
+        .into_iter()
+        .flatten()
+        .map(|(x, y)| {
+            let (x, y) = (x as f64, y as f64);
+            Mark::Shade {
+                points: vec![
+                    (x - 0.5, y - 0.5),
+                    (x + 0.5, y - 0.5),
+                    (x + 0.5, y + 0.5),
+                    (x - 0.5, y + 0.5),
+                ],
+                darkness: HOLE,
+                colour: Colour::BLACK,
+                spacing: DOT_SPACING,
+            }
         })
         .collect()
 }

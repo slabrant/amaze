@@ -2,6 +2,7 @@ use crate::grid::{Cell, Grid};
 use crate::maze::{Content, Maze, PieceId, SHORTEST_CIRCUIT};
 use crate::solvers::{Solver, steps_to_finish};
 use rand::prelude::*;
+use std::collections::{BTreeMap, HashSet};
 
 const NEAR: f64 = 0.13;
 const LONG_ROUTE: f64 = 0.53;
@@ -158,6 +159,73 @@ pub fn level(maze: &Maze, id: PieceId) -> Option<Level> {
         Content::Crossing => Some(Level::Under),
         _ => None,
     }
+}
+
+pub fn holes(maze: &Maze) -> Vec<Vec<(usize, usize)>> {
+    let grid = maze.grid;
+    let corner = |x: usize, y: usize| y * (grid.width + 1) + x;
+    let mut parent: Vec<usize> = (0..(grid.width + 1) * (grid.height + 1)).collect();
+    fn root(parent: &mut [usize], mut at: usize) -> usize {
+        while parent[at] != at {
+            parent[at] = parent[parent[at]];
+            at = parent[at];
+        }
+        at
+    }
+    let unite = |parent: &mut [usize], a: usize, b: usize| {
+        let (a, b) = (root(parent, a), root(parent, b));
+        parent[a] = b;
+    };
+    for cell in grid.cells() {
+        let Cell { x, y } = cell;
+        if x + 1 < grid.width && !maze.joined(cell, Cell { x: x + 1, y }) {
+            unite(&mut parent, corner(x + 1, y), corner(x + 1, y + 1));
+        }
+        if y + 1 < grid.height && !maze.joined(cell, Cell { x, y: y + 1 }) {
+            unite(&mut parent, corner(x, y + 1), corner(x + 1, y + 1));
+        }
+        if maze.content(cell) == Content::Empty {
+            unite(&mut parent, corner(x, y), corner(x + 1, y + 1));
+            unite(&mut parent, corner(x + 1, y), corner(x, y + 1));
+            unite(&mut parent, corner(x, y), corner(x + 1, y));
+        }
+    }
+    let edge: HashSet<usize> = (0..=grid.width)
+        .flat_map(|x| [corner(x, 0), corner(x, grid.height)])
+        .chain((0..=grid.height).flat_map(|y| [corner(0, y), corner(grid.width, y)]))
+        .map(|at| root(&mut parent, at))
+        .collect();
+    let mut found: BTreeMap<usize, Vec<(usize, usize)>> = BTreeMap::new();
+    for y in 0..=grid.height {
+        for x in 0..=grid.width {
+            let at = corner(x, y);
+            let hole = root(&mut parent, at);
+            if !edge.contains(&hole) && touches_gap(maze, x, y) {
+                found.entry(hole).or_default().push((x, y));
+            }
+        }
+    }
+    found.into_values().collect()
+}
+
+fn touches_gap(maze: &Maze, x: usize, y: usize) -> bool {
+    let grid = maze.grid;
+    let around: Vec<Cell> = [(0, 0), (1, 0), (0, 1), (1, 1)]
+        .into_iter()
+        .filter(|&(dx, dy)| x >= dx && y >= dy && x - dx < grid.width && y - dy < grid.height)
+        .map(|(dx, dy)| Cell {
+            x: x - dx,
+            y: y - dy,
+        })
+        .collect();
+    around
+        .iter()
+        .any(|&cell| maze.content(cell) == Content::Empty)
+        || around.iter().enumerate().any(|(i, &a)| {
+            around[i + 1..]
+                .iter()
+                .any(|&b| a.squared_distance(b) == 1 && !maze.joined(a, b))
+        })
 }
 
 pub struct Stretches {
