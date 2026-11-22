@@ -1,4 +1,5 @@
 name: Mazes
+run-name: "Mazes: ${{ inputs.level }}, ${{ inputs.per_page || '1' }} per page, ${{ inputs.black && 'black' || 'colour' }}, seed ${{ inputs.seed || 'random' }}${{ inputs.stl && ', with STL' || '' }}"
 
 on:
   workflow_dispatch:
@@ -47,34 +48,43 @@ jobs:
           mkdir -p target/release
           gh release download programs --repo "$GITHUB_REPOSITORY" --pattern amaze-linux.tar.gz --output - | tar -xz -C target/release
       - name: Book
+        id: book
         env:
           SEED: ${{ inputs.seed }}
           LEVEL: ${{ inputs.level }}
           PER_PAGE: ${{ inputs.per_page }}
           BLACK: ${{ inputs.black }}
         run: |
-          mkdir -p mazes
-          args=(mazes/book.pdf)
-          [ -n "$SEED" ] && args+=("$SEED")
-          args+=(--per-page "${PER_PAGE:-1}")
+          seed=${SEED:-$(shuf -i 0-4294967295 -n 1)}
+          per_page=${PER_PAGE:-1}
+          ink=colour
+          [ "$BLACK" = true ] && ink=black
+          name="$LEVEL-${per_page}per-$ink-seed$seed"
+          args=("mazes/book-$name.pdf" "$seed" --per-page "$per_page")
           [ "$LEVEL" != all ] && args+=(--level "$LEVEL")
           [ "$BLACK" = true ] && args+=(--black)
-          ./target/release/amaze "${args[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+          mkdir -p mazes
+          ./target/release/amaze "${args[@]}"
+          echo "seed=$seed" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "- Book: \`book-$name.pdf\`" >> "$GITHUB_STEP_SUMMARY"
       - name: STL
         if: inputs.stl
         env:
-          SEED: ${{ inputs.seed }}
+          SEED: ${{ steps.book.outputs.seed }}
           WIDTH: ${{ inputs.stl_width }}
           HEIGHT: ${{ inputs.stl_height }}
         run: |
-          seed=${SEED:-$(shuf -i 0-4294967295 -n 1)}
-          args=(mazes/maze.stl "$seed")
+          args=(mazes/stl.stl "$SEED")
           if [ -n "$WIDTH" ] || [ -n "$HEIGHT" ]; then
             args+=("${WIDTH:?width and height go together}" "${HEIGHT:?width and height go together}")
           fi
-          echo -n "STL " >> "$GITHUB_STEP_SUMMARY"
-          ./target/release/stl "${args[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+          size=$(./target/release/stl "${args[@]}" | sed -n 's/^size //p')
+          name="maze-$size-seed$SEED"
+          mv mazes/stl.stl "mazes/$name.stl"
+          mv mazes/stl.pdf "mazes/$name.pdf"
+          echo "- STL: \`$name.stl\`, the same maze on paper: \`$name.pdf\`" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
-          name: mazes
+          name: mazes-${{ steps.book.outputs.name }}
           path: mazes/

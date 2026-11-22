@@ -111,7 +111,7 @@ the shortest circuit the rules allow, since the rules already make every route t
 
 `cargo run --release --bin stl -- maze.stl [seed] [width height]`
 
-Writes one maze as a solid for 3D printing, Easy size by default, 8 mm a cell, and beside it a PDF of the same maze, its solution on the back.
+Writes one maze as a solid for 3D printing, Easy size by default, 8 mm a cell, and beside it a PDF of the same maze, its solution on the back. Prints the seed and the grid size.
 
 - Only the paths, standing on the print bed. No base.
 - Paths are half a cell wide, narrower than in the drawing, so there is room between crossings to climb.
@@ -153,9 +153,16 @@ interval crosses zero is not steering the choice.
 ## GitHub action
 
 The Mazes workflow (Actions, Mazes, Run workflow) writes a book and an STL with
-its PDF, and keeps them as a download named `mazes`. Its inputs are the seed,
-level, mazes to a page, black ink only, whether to write the STL, and the STL's
-width and height. The seeds used are shown on the run's summary.
+its PDF, and keeps them as a download. Its inputs are the seed, level, mazes
+to a page, black ink only, whether to write the STL, and the STL's width and
+height. With no seed given, one random seed is used for both.
+
+Files are named after their inputs, and the run and the download after the book:
+
+- `book-hard-2per-black-seed7.pdf`: level, mazes to a page, ink, seed.
+- `maze-13x17-seed7.stl` and `maze-13x17-seed7.pdf`: the STL and the same maze
+  on paper, named by grid size and seed. The STL's maze is not one of the book's.
+- `mazes-hard-2per-black-seed7`: the download.
 
 It runs the programs the Build workflow made, kept as the `programs` release.
 Build runs whenever `main` changes the code, so a Mazes run straight after a

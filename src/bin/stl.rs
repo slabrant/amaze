@@ -38,6 +38,7 @@ fn main() -> ExitCode {
     match written {
         Ok(()) => {
             println!("seed {seed}");
+            println!("size {width}x{height}");
             ExitCode::SUCCESS
         }
         Err(error) => {
