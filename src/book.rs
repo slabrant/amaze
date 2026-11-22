@@ -1,6 +1,4 @@
-#[cfg(test)]
-use crate::drawing::Colour;
-use crate::drawing::{Ink, Mark, Point, draw, draw_solution};
+use crate::drawing::{Colour, Ink, Mark, Point, draw, draw_solution};
 use crate::generate::generate;
 use crate::grid::Grid;
 use crate::maze::Maze;
@@ -16,6 +14,8 @@ const FIRST_SIDE: f64 = 10.0;
 const LEVEL_GROWTH: f64 = 1.6;
 const LEVEL_DOT_SPACINGS: [f64; 4] = [2.2, 2.0, 1.85, 1.7];
 const SHEETS: usize = 4;
+const LEVEL_MARK_RADIUS: f64 = 1.5 * MILLIMETRE;
+const LEVEL_MARK_SPACING: f64 = 4.5 * MILLIMETRE;
 pub const LEVEL_NAMES: [&str; 4] = ["trivial", "easy", "standard", "hard"];
 
 struct Slot {
@@ -36,7 +36,8 @@ pub fn book(seed: u64, per_page: usize, level: Option<usize>, ink: Ink) -> Vec<V
     let mazes: Vec<(Maze, f64)> = mazes(&jobs).into_iter().zip(spacings).collect();
     mazes
         .chunks(per_page)
-        .flat_map(|page| sheet(page, &slots, ink))
+        .zip(levels.chunks(per_page))
+        .flat_map(|(page, levels)| sheet(page, &slots, levels[0], ink))
         .collect()
 }
 
@@ -68,7 +69,7 @@ fn grids(slot: &Slot) -> [Grid; 4] {
 
 pub fn single(maze: &Maze, level: usize, ink: Ink) -> Vec<Vec<Mark>> {
     let page = [(maze.clone(), LEVEL_DOT_SPACINGS[level])];
-    sheet(&page, &[whole_page()], ink).into()
+    sheet(&page, &[whole_page()], level, ink).into()
 }
 
 fn mazes(jobs: &[(Grid, u64)]) -> Vec<Maze> {
@@ -110,11 +111,12 @@ pub fn maze(grid: Grid, seed: u64) -> Maze {
         .expect("a maze within the retries")
 }
 
-fn sheet(mazes: &[(Maze, f64)], slots: &[Slot], ink: Ink) -> [Vec<Mark>; 2] {
+fn sheet(mazes: &[(Maze, f64)], slots: &[Slot], level: usize, ink: Ink) -> [Vec<Mark>; 2] {
     let front = mazes
         .iter()
         .zip(slots)
         .flat_map(|((maze, spacing), slot)| place(maze, &draw(maze, ink), slot, *spacing))
+        .chain(level_mark(level, slots))
         .collect();
     let back = mazes
         .iter()
@@ -123,6 +125,24 @@ fn sheet(mazes: &[(Maze, f64)], slots: &[Slot], ink: Ink) -> [Vec<Mark>; 2] {
         .map(|mark| mark.moved(1.0, |(x, y)| (LETTER.0 - x, y)))
         .collect();
     [front, back]
+}
+
+fn level_mark(level: usize, slots: &[Slot]) -> Vec<Mark> {
+    let middle = LETTER.1 / 2.0;
+    let y = slots
+        .iter()
+        .filter(|slot| slot.top > MARGIN)
+        .map(|slot| slot.top - GAP / 2.0)
+        .min_by(|a, b| (a - middle).abs().total_cmp(&(b - middle).abs()))
+        .unwrap_or(LETTER.1 - MARGIN / 2.0);
+    let first = LETTER.0 / 2.0 - LEVEL_MARK_SPACING * level as f64 / 2.0;
+    (0..=level)
+        .map(|at| Mark::Disc {
+            centre: (first + LEVEL_MARK_SPACING * at as f64, y),
+            radius: LEVEL_MARK_RADIUS,
+            colour: Colour::BLACK,
+        })
+        .collect()
 }
 
 fn place(maze: &Maze, marks: &[Mark], slot: &Slot, dots: f64) -> Vec<Mark> {
@@ -222,6 +242,20 @@ mod tests {
         for per_page in 1..=6 {
             let zones = levels(per_page).map(zones_for);
             assert!(zones.windows(2).all(|pair| pair[0] <= pair[1]));
+        }
+    }
+
+    #[test]
+    fn level_mark_sits_between_mazes() {
+        for per_page in [2, 4] {
+            let marks = level_mark(3, &slots(per_page));
+            assert_eq!(marks.len(), 4);
+            for mark in marks {
+                let Mark::Disc { centre, .. } = mark else {
+                    panic!("level mark is discs");
+                };
+                assert!((centre.1 - LETTER.1 / 2.0).abs() < 1.0);
+            }
         }
     }
 

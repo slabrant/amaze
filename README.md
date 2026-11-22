@@ -94,6 +94,7 @@ the shortest circuit the rules allow, since the rules already make every route t
 - A crossing where both paths run the same way: undecided (dashed edges, or a narrower top path).
 - Start: a cyan square with a white dot. It has no direction; the solver can set off either way.
 - Finish: a magenta square with a white ring and dot.
+- Level mark: a row of black dots, one for Trivial up to four for Hard, centred across the page in the gap between mazes nearest the middle, or in the bottom margin when there is one maze to a page. Only on the front.
 - No text.
 
 ## Output
