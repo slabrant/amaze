@@ -149,3 +149,10 @@ loop growing one bump at a time.
 
 Lifts are averaged per maze, then given a 95% interval across mazes. A term whose
 interval crosses zero is not steering the choice.
+
+## GitHub action
+
+The Mazes workflow (Actions, Mazes, Run workflow) writes a book and an STL with
+its PDF, and keeps them as a download named `mazes`. Its inputs are the seed,
+level, mazes to a page, black ink only, whether to write the STL, and the STL's
+width and height. The seeds used are shown on the run's summary.

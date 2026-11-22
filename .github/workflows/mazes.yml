@@ -1,0 +1,75 @@
+name: Mazes
+
+on:
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: Seed (blank for a random one)
+        required: false
+        default: ""
+      level:
+        description: Level of every maze in the book
+        type: choice
+        default: all
+        options: [all, trivial, easy, standard, hard]
+      per_page:
+        description: Mazes to a page
+        required: false
+        default: "1"
+      black:
+        description: Black ink only
+        type: boolean
+        default: false
+      stl:
+        description: Also write a maze for 3D printing
+        type: boolean
+        default: true
+      stl_width:
+        description: STL grid width (blank for Easy size)
+        required: false
+        default: ""
+      stl_height:
+        description: STL grid height (blank for Easy size)
+        required: false
+        default: ""
+
+jobs:
+  mazes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release
+      - name: Book
+        env:
+          SEED: ${{ inputs.seed }}
+          LEVEL: ${{ inputs.level }}
+          PER_PAGE: ${{ inputs.per_page }}
+          BLACK: ${{ inputs.black }}
+        run: |
+          mkdir -p mazes
+          args=(mazes/book.pdf)
+          [ -n "$SEED" ] && args+=("$SEED")
+          args+=(--per-page "${PER_PAGE:-1}")
+          [ "$LEVEL" != all ] && args+=(--level "$LEVEL")
+          [ "$BLACK" = true ] && args+=(--black)
+          ./target/release/amaze "${args[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: STL
+        if: inputs.stl
+        env:
+          SEED: ${{ inputs.seed }}
+          WIDTH: ${{ inputs.stl_width }}
+          HEIGHT: ${{ inputs.stl_height }}
+        run: |
+          seed=${SEED:-$(shuf -i 0-4294967295 -n 1)}
+          args=(mazes/maze.stl "$seed")
+          if [ -n "$WIDTH" ] || [ -n "$HEIGHT" ]; then
+            args+=("${WIDTH:?width and height go together}" "${HEIGHT:?width and height go together}")
+          fi
+          echo -n "STL " >> "$GITHUB_STEP_SUMMARY"
+          ./target/release/stl "${args[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mazes
+          path: mazes/
