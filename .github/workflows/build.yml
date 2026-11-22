@@ -1,0 +1,31 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    paths: [src/**, Cargo.toml, Cargo.lock, .github/workflows/build.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tar -czf amaze-linux.tar.gz -C target/release amaze stl
+          gh release view programs >/dev/null 2>&1 || gh release create programs --title Programs --notes "Built from main by the Build workflow." --latest=false
+          gh release upload programs amaze-linux.tar.gz --clobber
+          gh release edit programs --notes "Built from main at $GITHUB_SHA by the Build workflow."
