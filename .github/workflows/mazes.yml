@@ -69,6 +69,7 @@ jobs:
           echo "name=$name" >> "$GITHUB_OUTPUT"
           echo "- Book: \`book-$name.pdf\`" >> "$GITHUB_STEP_SUMMARY"
       - name: STL
+        id: stl
         if: inputs.stl
         env:
           SEED: ${{ steps.book.outputs.seed }}
@@ -83,8 +84,19 @@ jobs:
           name="maze-$size-seed$SEED"
           mv mazes/stl.stl "mazes/$name.stl"
           mv mazes/stl.pdf "mazes/$name.pdf"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
           echo "- STL: \`$name.stl\`, the same maze on paper: \`$name.pdf\`" >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
-          name: mazes-${{ steps.book.outputs.name }}
-          path: mazes/
+          path: mazes/book-${{ steps.book.outputs.name }}.pdf
+          archive: false
+      - uses: actions/upload-artifact@v7
+        if: inputs.stl
+        with:
+          path: mazes/${{ steps.stl.outputs.name }}.stl
+          archive: false
+      - uses: actions/upload-artifact@v7
+        if: inputs.stl
+        with:
+          path: mazes/${{ steps.stl.outputs.name }}.pdf
+          archive: false

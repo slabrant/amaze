@@ -154,16 +154,15 @@ interval crosses zero is not steering the choice.
 ## GitHub action
 
 The Mazes workflow (Actions, Mazes, Run workflow) writes a book and an STL with
-its PDF, and keeps them as a download. Its inputs are the seed, level, mazes
+its PDF, and keeps each as its own download, not zipped. Its inputs are the seed, level, mazes
 to a page, black ink only, whether to write the STL, and the STL's width and
 height. With no seed given, one random seed is used for both.
 
-Files are named after their inputs, and the run and the download after the book:
+Files are named after their inputs, and the run after the book:
 
 - `book-hard-2per-black-seed7.pdf`: level, mazes to a page, ink, seed.
 - `maze-13x17-seed7.stl` and `maze-13x17-seed7.pdf`: the STL and the same maze
   on paper, named by grid size and seed. The STL's maze is not one of the book's.
-- `mazes-hard-2per-black-seed7`: the download.
 
 It runs the programs the Build workflow made, kept as the `programs` release.
 Build runs whenever `main` changes the code, so a Mazes run straight after a
